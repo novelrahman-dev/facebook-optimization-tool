@@ -162,7 +162,7 @@ class FacebookOptimizationTool:
             # Load Google Sheets data
             self.load_google_sheets_data()
             
-            # Load Facebook API data with pagination
+            # Load Facebook API data with unlimited pagination
             self.load_facebook_api_data()
             
             # Process and combine data
@@ -204,14 +204,14 @@ class FacebookOptimizationTool:
             print(f"❌ Google Sheets loading error: {e}")
 
     def load_facebook_api_data(self):
-        """Load marketing metrics from Facebook API with expanded date range"""
+        """Load marketing metrics from Facebook API with unlimited pagination"""
         try:
             if not self.fb_access_token or not self.fb_ad_account_id:
                 print("⚠️ Facebook API credentials not available")
                 return
             
-            # Use expanded date range but with better pagination
-            since_date = "2025-06-01"  # Back to June 1st as requested
+            # Use full date range
+            since_date = "2025-06-01"
             until_date = datetime.now().strftime("%Y-%m-%d")
             
             print(f"🔄 Loading Facebook API data from {since_date} to {until_date}")
@@ -219,28 +219,29 @@ class FacebookOptimizationTool:
             all_ads_data = []
             after_cursor = None
             page_count = 0
-            max_pages = 20  # Increased to get more historical data
             
-            while page_count < max_pages:
+            # Remove artificial page limit - continue until no more data
+            while True:
                 try:
                     # Facebook API endpoint for ads with insights
                     url = f"https://graph.facebook.com/v18.0/{self.fb_ad_account_id}/ads"
                     
                     params = {
                         'access_token': self.fb_access_token,
-                        'fields': 'name,adset{name},insights{impressions,clicks,spend}',  # Minimal fields to reduce load
+                        'fields': 'name,adset{name},insights{impressions,clicks,spend}',
                         'time_range': json.dumps({
                             'since': since_date,
                             'until': until_date
                         }),
-                        'limit': 20,  # Smaller page size
+                        'limit': 50,  # Increased page size to reduce API calls
                         'level': 'ad'
                     }
                     
                     if after_cursor:
                         params['after'] = after_cursor
                     
-                    print(f"📡 Fetching page {page_count + 1} from Facebook API...")
+                    page_count += 1
+                    print(f"📡 Fetching page {page_count} from Facebook API...")
                     
                     response = requests.get(url, params=params, timeout=30)
                     
@@ -253,7 +254,7 @@ class FacebookOptimizationTool:
                             break
                         
                         all_ads_data.extend(ads_data)
-                        print(f"✅ Loaded {len(ads_data)} ads from page {page_count + 1}")
+                        print(f"✅ Loaded {len(ads_data)} ads from page {page_count} (Total: {len(all_ads_data)})")
                         
                         # Check for next page
                         paging = data.get('paging', {})
@@ -261,13 +262,11 @@ class FacebookOptimizationTool:
                         after_cursor = cursors.get('after')
                         
                         if not after_cursor:
-                            print("📄 Reached end of data")
+                            print("📄 Reached end of data - no more pages available")
                             break
                         
-                        page_count += 1
-                        
                         # Add delay to respect rate limits
-                        time.sleep(0.5)
+                        time.sleep(0.3)
                         
                     elif response.status_code == 400:
                         error_data = response.json()
@@ -329,7 +328,7 @@ class FacebookOptimizationTool:
                     continue
             
             self.fb_api_data = fb_api_records
-            print(f"✅ Processed {len(fb_api_records)} ads from Facebook API")
+            print(f"✅ Processed {len(fb_api_records)} ads from Facebook API (loaded {len(all_ads_data)} total ads)")
                 
         except Exception as e:
             print(f"❌ Facebook API loading error: {e}")
