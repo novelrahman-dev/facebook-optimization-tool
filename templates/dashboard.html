@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Facebook Media Buying Optimization Tool</title>
+    <title>Facebook Optimization Tool</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * {
             margin: 0;
@@ -12,71 +13,64 @@
         }
         
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            color: #333;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f8fafc;
+            color: #334155;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
         }
         
         .header {
-            background: rgba(255, 255, 255, 0.95);
-            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
             text-align: center;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
         
         .header h1 {
-            color: #4a5568;
-            margin-bottom: 5px;
-            font-size: 2.2em;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
         }
         
         .header p {
-            color: #718096;
-            font-size: 1.1em;
+            font-size: 1.1rem;
+            opacity: 0.9;
         }
         
-        .nav-tabs {
+        .tabs {
             display: flex;
-            justify-content: center;
-            background: rgba(255, 255, 255, 0.9);
-            margin: 20px;
-            border-radius: 10px;
-            padding: 10px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            background: white;
+            border-radius: 12px;
+            padding: 8px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
         }
         
-        .nav-tab {
+        .tab {
+            flex: 1;
+            padding: 12px 20px;
+            text-align: center;
             background: transparent;
             border: none;
-            padding: 12px 24px;
-            margin: 0 5px;
             border-radius: 8px;
             cursor: pointer;
-            font-size: 16px;
             font-weight: 500;
             transition: all 0.3s ease;
-            color: #4a5568;
         }
         
-        .nav-tab:hover {
-            background: #e2e8f0;
-            transform: translateY(-2px);
-        }
-        
-        .nav-tab.active {
-            background: #4299e1;
+        .tab.active {
+            background: #667eea;
             color: white;
-            box-shadow: 0 4px 12px rgba(66, 153, 225, 0.3);
         }
         
-        .content {
-            background: rgba(255, 255, 255, 0.95);
-            margin: 20px;
-            padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
-            min-height: 600px;
+        .tab:hover:not(.active) {
+            background: #f1f5f9;
         }
         
         .tab-content {
@@ -87,55 +81,94 @@
             display: block;
         }
         
-        .btn {
-            background: #4299e1;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.3s ease;
-            margin: 5px;
-        }
-        
-        .btn:hover {
-            background: #3182ce;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(66, 153, 225, 0.3);
-        }
-        
-        .kpi-grid {
+        .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 20px;
             margin-bottom: 30px;
         }
         
-        .kpi-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px;
+        .stat-card {
+            background: white;
+            padding: 25px;
             border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
             text-align: center;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            transition: transform 0.3s ease;
         }
         
-        .kpi-card:hover {
-            transform: translateY(-5px);
-        }
-        
-        .kpi-value {
-            font-size: 2.5em;
+        .stat-value {
+            font-size: 2rem;
             font-weight: bold;
-            margin-bottom: 5px;
+            color: #667eea;
+            margin-bottom: 8px;
         }
         
-        .kpi-label {
-            font-size: 0.9em;
-            opacity: 0.9;
+        .stat-label {
+            color: #64748b;
+            font-size: 0.9rem;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            margin-bottom: 20px;
+        }
+        
+        .card h3 {
+            margin-bottom: 20px;
+            color: #1e293b;
+            font-size: 1.3rem;
+        }
+        
+        .btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            margin: 5px;
+        }
+        
+        .btn:hover {
+            background: #5a67d8;
+            transform: translateY(-1px);
+        }
+        
+        .btn-secondary {
+            background: #64748b;
+        }
+        
+        .btn-secondary:hover {
+            background: #475569;
+        }
+        
+        .btn-success {
+            background: #10b981;
+        }
+        
+        .btn-success:hover {
+            background: #059669;
+        }
+        
+        .btn-warning {
+            background: #f59e0b;
+        }
+        
+        .btn-warning:hover {
+            background: #d97706;
+        }
+        
+        .btn-danger {
+            background: #ef4444;
+        }
+        
+        .btn-danger:hover {
+            background: #dc2626;
         }
         
         .form-group {
@@ -144,404 +177,1007 @@
         
         .form-group label {
             display: block;
-            margin-bottom: 5px;
+            margin-bottom: 8px;
             font-weight: 500;
-            color: #4a5568;
+            color: #374151;
         }
         
         .form-group input,
-        .form-group select {
+        .form-group select,
+        .form-group textarea {
             width: 100%;
             padding: 12px;
-            border: 1px solid #e2e8f0;
+            border: 2px solid #e5e7eb;
             border-radius: 8px;
-            font-size: 14px;
+            font-size: 1rem;
+            transition: border-color 0.3s ease;
         }
         
-        .output-area {
-            background: #f7fafc;
-            padding: 20px;
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .toggle-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .toggle-btn {
+            padding: 8px 16px;
+            border: 2px solid #e5e7eb;
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .toggle-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+        
+        .table-container {
+            overflow-x: auto;
+            margin-top: 20px;
+        }
+        
+        .performance-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
             border-radius: 8px;
-            border: 1px solid #e2e8f0;
-            min-height: 300px;
-            white-space: pre-wrap;
-            font-family: 'Courier New', monospace;
-            font-size: 14px;
-            line-height: 1.6;
+            overflow: hidden;
+        }
+        
+        .performance-table th,
+        .performance-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        
+        .performance-table th {
+            background: #f8fafc;
+            font-weight: 600;
+            color: #374151;
+        }
+        
+        .performance-table tr:hover {
+            background: #f8fafc;
+        }
+        
+        .expandable-row {
+            cursor: pointer;
+        }
+        
+        .expandable-row:hover {
+            background: #f1f5f9;
+        }
+        
+        .sub-row {
+            background: #f8fafc;
+            display: none;
+        }
+        
+        .sub-row.show {
+            display: table-row;
+        }
+        
+        .sub-row td {
+            padding-left: 30px;
+            font-size: 0.9rem;
+            color: #64748b;
+        }
+        
+        .expand-icon {
+            margin-right: 8px;
+            transition: transform 0.3s ease;
+        }
+        
+        .expand-icon.expanded {
+            transform: rotate(90deg);
         }
         
         .loading {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 200px;
-            color: #718096;
+            text-align: center;
+            padding: 40px;
+            color: #64748b;
         }
         
-        .spinner {
-            border: 3px solid #e2e8f0;
-            border-top: 3px solid #4299e1;
-            border-radius: 50%;
-            width: 30px;
-            height: 30px;
-            animation: spin 1s linear infinite;
-            margin-right: 10px;
+        .error {
+            background: #fef2f2;
+            color: #dc2626;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
         }
         
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        .success {
+            background: #f0fdf4;
+            color: #16a34a;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
         }
         
-        .recommendations-container {
+        .insights-content {
+            background: #f8fafc;
+            padding: 20px;
+            border-radius: 8px;
+            white-space: pre-wrap;
+            line-height: 1.6;
             max-height: 500px;
             overflow-y: auto;
-            border: 1px solid #e2e8f0;
+        }
+        
+        .brief-content {
+            background: #f8fafc;
+            padding: 20px;
             border-radius: 8px;
-            padding: 15px;
+            white-space: pre-wrap;
+            line-height: 1.6;
+            max-height: 600px;
+            overflow-y: auto;
         }
         
         .recommendation-item {
-            background: #f7fafc;
-            margin-bottom: 15px;
-            padding: 15px;
+            background: white;
+            border: 1px solid #e5e7eb;
             border-radius: 8px;
-            border-left: 4px solid #cbd5e0;
+            padding: 15px;
+            margin-bottom: 10px;
         }
         
-        .recommendation-item.pause {
-            border-left-color: #f56565;
-            background: #fed7d7;
+        .recommendation-header {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            margin-bottom: 10px;
         }
         
-        .recommendation-item.scale {
-            border-left-color: #48bb78;
-            background: #c6f6d5;
+        .recommendation-title {
+            font-weight: 600;
+            color: #1e293b;
         }
         
-        .recommendation-item.monitor {
-            border-left-color: #4299e1;
-            background: #bee3f8;
+        .recommendation-action {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 500;
         }
         
-        .status-indicator {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
+        .action-pause {
+            background: #fef2f2;
+            color: #dc2626;
+        }
+        
+        .action-scale {
+            background: #f0fdf4;
+            color: #16a34a;
+        }
+        
+        .action-monitor {
+            background: #fef3c7;
+            color: #d97706;
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .metric-item {
+            text-align: center;
+            padding: 8px;
+            background: #f8fafc;
+            border-radius: 6px;
+        }
+        
+        .metric-value {
+            font-weight: 600;
+            color: #1e293b;
+        }
+        
+        .metric-label {
+            font-size: 0.8rem;
+            color: #64748b;
+        }
+        
+        .checkbox-group {
+            margin: 10px 0;
+        }
+        
+        .checkbox-group input[type="checkbox"] {
             margin-right: 8px;
         }
         
-        .status-indicator.online {
-            background: #48bb78;
-        }
-        
-        .status-indicator.offline {
-            background: #f56565;
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .stats-grid {
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                gap: 15px;
+            }
+            
+            .tabs {
+                flex-direction: column;
+            }
+            
+            .tab {
+                margin-bottom: 5px;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>🚀 Facebook Media Buying Optimization Tool</h1>
-        <p>AI-Powered Performance Analysis & Creative Brief Generation</p>
-        <div style="margin-top: 10px;">
-            <span class="status-indicator online"></span>
-            <span style="color: #48bb78; font-weight: 500;">System Online</span>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Facebook Optimization Tool</h1>
+            <p>AI-Powered Media Buying Optimization with Real-Time Insights</p>
         </div>
-    </div>
-
-    <div class="nav-tabs">
-        <button class="nav-tab active" onclick="showTab('dashboard')">📊 Dashboard</button>
-        <button class="nav-tab" onclick="showTab('optimization')">🚀 Optimization</button>
-        <button class="nav-tab" onclick="showTab('creative-brief')">🎯 Creative Brief</button>
-        <button class="nav-tab" onclick="showTab('ai-insights')">🤖 AI Insights</button>
-    </div>
-
-    <div class="content">
-        <!-- Dashboard Tab -->
+        
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('dashboard')">📊 Performance Dashboard</button>
+            <button class="tab" onclick="showTab('optimization')">⚡ Optimization</button>
+            <button class="tab" onclick="showTab('creative-brief')">📝 Creative Brief</button>
+            <button class="tab" onclick="showTab('ai-insights')">🤖 AI Insights</button>
+            <button class="tab" onclick="showTab('automation')">🔄 Automation</button>
+        </div>
+        
+        <!-- Performance Dashboard Tab -->
         <div id="dashboard" class="tab-content active">
-            <h2>Performance Dashboard</h2>
-            <p>Real-time performance metrics and KPI tracking</p>
-            
-            <div style="margin: 20px 0;">
-                <button class="btn" onclick="refreshData()">🔄 Refresh Data</button>
-                <button class="btn" onclick="exportReport()">📊 Export Report</button>
+            <div class="stats-grid" id="stats-grid">
+                <!-- Stats will be loaded here -->
             </div>
-
-            <div class="kpi-grid" id="kpi-grid">
-                <div class="kpi-card">
-                    <div class="kpi-value" id="total-ads">-</div>
-                    <div class="kpi-label">Total Ads</div>
+            
+            <div class="card">
+                <h3>📈 Performance Overview Table</h3>
+                
+                <div class="toggle-group">
+                    <button class="toggle-btn active" id="adset-view-btn" onclick="toggleView('adset')">
+                        📁 Ad Set View
+                    </button>
+                    <button class="toggle-btn" id="ad-view-btn" onclick="toggleView('ad')">
+                        📄 Ad View
+                    </button>
+                    <button class="btn btn-secondary" onclick="refreshPerformanceTable()">
+                        🔄 Refresh Data
+                    </button>
                 </div>
-                <div class="kpi-card">
-                    <div class="kpi-value" id="total-spend">-</div>
-                    <div class="kpi-label">Total Spend</div>
-                </div>
-                <div class="kpi-card">
-                    <div class="kpi-value" id="avg-roas">-</div>
-                    <div class="kpi-label">Avg ROAS</div>
-                </div>
-                <div class="kpi-card">
-                    <div class="kpi-value" id="successful-ads">-</div>
-                    <div class="kpi-label">Successful Ads</div>
-                </div>
-                <div class="kpi-card">
-                    <div class="kpi-value" id="avg-ctr">-</div>
-                    <div class="kpi-label">Avg CTR %</div>
-                </div>
-                <div class="kpi-card">
-                    <div class="kpi-value" id="avg-cpa">-</div>
-                    <div class="kpi-label">Avg CPA</div>
+                
+                <div class="table-container">
+                    <table class="performance-table" id="performance-table">
+                        <thead>
+                            <tr id="table-headers">
+                                <!-- Headers will be populated dynamically -->
+                            </tr>
+                        </thead>
+                        <tbody id="table-body">
+                            <!-- Data will be populated dynamically -->
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
-
+        
         <!-- Optimization Tab -->
         <div id="optimization" class="tab-content">
-            <h2>Optimization Recommendations</h2>
-            <p>AI-powered recommendations for improving ad performance</p>
-            
-            <div style="margin: 20px 0;">
-                <button class="btn" onclick="loadRecommendations()">🔄 Load Recommendations</button>
-                <button class="btn" onclick="executeSelected()">✅ Execute Selected</button>
-            </div>
-
-            <div class="recommendations-container" id="recommendations-container">
-                <div class="loading">
-                    <div class="spinner"></div>
-                    Click "Load Recommendations" to see optimization suggestions
+            <div class="card">
+                <h3>⚡ Optimization Recommendations</h3>
+                <button class="btn" onclick="loadOptimizationRecommendations()">🔄 Refresh Recommendations</button>
+                
+                <div id="optimization-content">
+                    <div class="loading">Loading optimization recommendations...</div>
+                </div>
+                
+                <div id="selected-actions" style="margin-top: 20px; display: none;">
+                    <h4>Selected Actions:</h4>
+                    <button class="btn btn-success" onclick="executeSelectedActions()">✅ Execute Selected</button>
+                    <button class="btn btn-secondary" onclick="clearSelections()">❌ Clear All</button>
                 </div>
             </div>
         </div>
-
+        
         <!-- Creative Brief Tab -->
         <div id="creative-brief" class="tab-content">
-            <h2>Creative Brief Generator</h2>
-            <p>Generate AI-enhanced creative briefs based on performance data</p>
-            
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 20px;">
-                <div>
-                    <h3>Generate New Brief</h3>
-                    <div class="form-group">
-                        <label for="campaign-name">Campaign Name</label>
-                        <input type="text" id="campaign-name" placeholder="e.g., Holiday Dental Rewards">
-                    </div>
-                    <div class="form-group">
-                        <label for="campaign-type">Campaign Type</label>
-                        <select id="campaign-type">
-                            <option value="Seasonal">Seasonal</option>
-                            <option value="Evergreen">Evergreen</option>
-                        </select>
-                    </div>
-                    <button class="btn" onclick="generateBrief()">🎯 Generate Brief</button>
+            <div class="card">
+                <h3>📝 AI-Enhanced Creative Brief Generator</h3>
+                
+                <div class="form-group">
+                    <label for="campaign-name">Campaign Name:</label>
+                    <input type="text" id="campaign-name" placeholder="Enter campaign name">
                 </div>
                 
-                <div>
-                    <h3>Generated Brief</h3>
-                    <div class="output-area" id="brief-output">
-                        Generate a brief to see AI-enhanced recommendations based on your performance data.
+                <div class="form-group">
+                    <label for="campaign-type">Campaign Type:</label>
+                    <select id="campaign-type">
+                        <option value="Seasonal">Seasonal</option>
+                        <option value="Evergreen">Evergreen</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="messaging-pillar">Messaging Pillar:</label>
+                    <select id="messaging-pillar">
+                        <option value="Convenience">Convenience & Easy Booking</option>
+                        <option value="Quality">Quality & 5-Star Dentists</option>
+                        <option value="Insurance">Insurance Coverage</option>
+                        <option value="Reward">Reward & Incentive</option>
+                        <option value="Urgency">Urgency & Limited Time</option>
+                        <option value="Trust">Trust & Safety</option>
+                        <option value="Family">Family & Kids</option>
+                        <option value="Emergency">Emergency Care</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="value-pillar">Value Pillar:</label>
+                    <select id="value-pillar">
+                        <option value="Convenience-Insurance">Convenience + Insurance Coverage</option>
+                        <option value="Quality-Network">Quality Network + 5-Star Dentists</option>
+                        <option value="Reward-Incentive">Reward Program + Incentives</option>
+                        <option value="Trust-Safety">Trust + Safety Assurance</option>
+                        <option value="Speed-Efficiency">Speed + Booking Efficiency</option>
+                        <option value="Family-Care">Family Care + Kids Dentistry</option>
+                        <option value="Emergency-Availability">Emergency + 24/7 Availability</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>Creative Format:</label>
+                    <div class="toggle-group">
+                        <button class="toggle-btn active" id="static-format-btn" onclick="toggleFormat('static')">
+                            🖼️ Static Ads
+                        </button>
+                        <button class="toggle-btn" id="video-format-btn" onclick="toggleFormat('video')">
+                            🎥 Video Ads
+                        </button>
+                    </div>
+                </div>
+                
+                <button class="btn" onclick="generateCreativeBrief()">🚀 Generate AI Brief</button>
+                
+                <div id="brief-content" style="margin-top: 20px;">
+                    <!-- Brief content will appear here -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- AI Insights Tab -->
+        <div id="ai-insights" class="tab-content">
+            <div class="card">
+                <h3>🤖 AI-Powered Insights & CRO Analysis</h3>
+                
+                <div class="toggle-group">
+                    <button class="btn" onclick="generateAIInsights('cluster')">📊 Cluster Analysis</button>
+                    <button class="btn" onclick="generateAIInsights('creative_copy')">✍️ Creative Copy Analysis</button>
+                    <button class="btn" onclick="generateAIInsights('cro')">🎯 CRO & Funnel Analysis</button>
+                    <button class="btn" onclick="generateAIInsights('strategy')">📈 Strategy Recommendations</button>
+                </div>
+                
+                <div id="insights-content">
+                    <div class="insights-content">
+                        Click any button above to generate AI-powered insights based on your performance data.
+                        
+                        Available Analysis Types:
+                        • Cluster Analysis - Performance patterns and audience insights
+                        • Creative Copy Analysis - Messaging and copy performance patterns
+                        • CRO & Funnel Analysis - Landing page optimization and conversion insights
+                        • Strategy Recommendations - Campaign optimization strategies
                     </div>
                 </div>
             </div>
         </div>
-
-        <!-- AI Insights Tab -->
-        <div id="ai-insights" class="tab-content">
-            <h2>AI-Powered Insights</h2>
-            <p>Deep analysis and strategic recommendations</p>
-            
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 20px;">
-                <div>
-                    <h3>🔍 Cluster Analysis</h3>
-                    <button class="btn" onclick="generateInsights('cluster')">🔄 Generate Analysis</button>
-                    <div class="output-area" id="cluster-insights">
-                        Click "Generate Analysis" to see AI insights based on your performance data.
-                    </div>
-                </div>
+        
+        <!-- Automation Tab -->
+        <div id="automation" class="tab-content">
+            <div class="card">
+                <h3>🔄 Automation Status</h3>
+                <button class="btn" onclick="loadAutomationStatus()">🔄 Refresh Status</button>
+                <button class="btn btn-success" onclick="refreshAllData()">📊 Manual Data Refresh</button>
                 
-                <div>
-                    <h3>🎨 Creative Strategy</h3>
-                    <button class="btn" onclick="generateInsights('creative')">🔄 Generate Strategy</button>
-                    <div class="output-area" id="creative-insights">
-                        Click "Generate Strategy" to see creative recommendations.
-                    </div>
+                <div id="automation-status">
+                    <div class="loading">Loading automation status...</div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3>🧪 API Testing</h3>
+                <button class="btn" onclick="testOpenAI()">🤖 Test OpenAI</button>
+                <button class="btn" onclick="testFacebook()">📘 Test Facebook API</button>
+                
+                <div id="test-results">
+                    <!-- Test results will appear here -->
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        // Initialize the application
-        document.addEventListener('DOMContentLoaded', function() {
-            loadDashboardData();
-        });
-
-        // Tab management
+        let currentView = 'adset';
+        let currentFormat = 'static';
+        let performanceData = [];
+        let selectedActions = new Set();
+        
+        // Tab Management
         function showTab(tabName) {
-            // Hide all tabs
-            document.querySelectorAll('.tab-content').forEach(tab => {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            // Remove active class from all tabs
+            document.querySelectorAll('.tab').forEach(tab => {
                 tab.classList.remove('active');
             });
             
-            // Remove active class from all nav tabs
-            document.querySelectorAll('.nav-tab').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            
-            // Show selected tab
+            // Show selected tab content
             document.getElementById(tabName).classList.add('active');
+            
+            // Add active class to clicked tab
             event.target.classList.add('active');
+            
+            // Load content based on tab
+            if (tabName === 'dashboard') {
+                loadDashboard();
+            } else if (tabName === 'optimization') {
+                loadOptimizationRecommendations();
+            } else if (tabName === 'automation') {
+                loadAutomationStatus();
+            }
         }
-
-        // Load dashboard data
-        async function loadDashboardData() {
+        
+        // Performance Table View Toggle
+        function toggleView(view) {
+            currentView = view;
+            
+            // Update button states
+            document.getElementById('adset-view-btn').classList.toggle('active', view === 'adset');
+            document.getElementById('ad-view-btn').classList.toggle('active', view === 'ad');
+            
+            // Refresh table with new view
+            refreshPerformanceTable();
+        }
+        
+        // Creative Format Toggle
+        function toggleFormat(format) {
+            currentFormat = format;
+            
+            // Update button states
+            document.getElementById('static-format-btn').classList.toggle('active', format === 'static');
+            document.getElementById('video-format-btn').classList.toggle('active', format === 'video');
+        }
+        
+        // Load Dashboard
+        async function loadDashboard() {
             try {
                 const response = await fetch('/api/performance-summary');
                 const data = await response.json();
                 
-                document.getElementById('total-ads').textContent = data.total_ads || 0;
-                document.getElementById('total-spend').textContent = '$' + (data.total_spend || 0).toLocaleString();
-                document.getElementById('avg-roas').textContent = (data.avg_roas || 0).toFixed(2);
-                document.getElementById('successful-ads').textContent = data.successful_ads || 0;
-                document.getElementById('avg-ctr').textContent = (data.avg_ctr || 0).toFixed(2) + '%';
-                document.getElementById('avg-cpa').textContent = '$' + (data.avg_cpa || 0).toFixed(2);
+                // Update stats grid
+                const statsGrid = document.getElementById('stats-grid');
+                statsGrid.innerHTML = `
+                    <div class="stat-card">
+                        <div class="stat-value">${data.total_ads || 0}</div>
+                        <div class="stat-label">Total Ads</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">$${(data.total_spend || 0).toLocaleString()}</div>
+                        <div class="stat-label">Total Spend</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${(data.avg_roas || 0).toFixed(2)}</div>
+                        <div class="stat-label">Average ROAS</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${data.successful_ads || 0}</div>
+                        <div class="stat-label">High Performers</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${(data.avg_ctr || 0).toFixed(2)}%</div>
+                        <div class="stat-label">Average CTR</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">$${(data.avg_cpa || 0).toFixed(2)}</div>
+                        <div class="stat-label">Average CPA</div>
+                    </div>
+                `;
+                
+                // Load performance table
+                refreshPerformanceTable();
                 
             } catch (error) {
-                console.error('Error loading dashboard data:', error);
+                console.error('Error loading dashboard:', error);
             }
         }
-
-        // Refresh data
-        async function refreshData() {
-            const btn = event.target;
-            const originalText = btn.textContent;
-            btn.textContent = '🔄 Refreshing...';
-            btn.disabled = true;
-            
+        
+        // Refresh Performance Table
+        async function refreshPerformanceTable() {
             try {
-                const response = await fetch('/api/refresh-data', { method: 'POST' });
-                const result = await response.json();
-                
-                if (result.status === 'success') {
-                    await loadDashboardData();
-                    alert('Data refreshed successfully!');
-                } else {
-                    alert('Error refreshing data: ' + result.message);
+                const response = await fetch('/api/performance-data');
+                if (!response.ok) {
+                    throw new Error('Failed to fetch performance data');
                 }
+                const data = await response.json();
+                performanceData = data;
+                
+                renderPerformanceTable(data);
                 
             } catch (error) {
-                console.error('Error refreshing data:', error);
-                alert('Error refreshing data');
-            } finally {
-                btn.textContent = originalText;
-                btn.disabled = false;
+                console.error('Error refreshing performance table:', error);
+                // Show sample data if API fails
+                renderPerformanceTable(generateSampleData());
             }
         }
-
-        // Load optimization recommendations
-        async function loadRecommendations() {
-            const container = document.getElementById('recommendations-container');
-            container.innerHTML = '<div class="loading"><div class="spinner"></div>Loading recommendations...</div>';
+        
+        // Generate Sample Data for Demo
+        function generateSampleData() {
+            const sampleData = [];
+            for (let i = 1; i <= 20; i++) {
+                sampleData.push({
+                    ad_name: `Sample_Ad_${i}`,
+                    ad_set_name: `Sample_AdSet_${Math.ceil(i/4)}`,
+                    spend: Math.random() * 500 + 50,
+                    clicks: Math.floor(Math.random() * 1500) + 100,
+                    impressions: Math.floor(Math.random() * 45000) + 5000,
+                    conversions: Math.floor(Math.random() * 40) + 1,
+                    bookings: Math.floor(Math.random() * 30) + 1,
+                    revenue: Math.random() * 900 + 100,
+                    ctr: Math.random() * 2 + 0.1,
+                    cpc: Math.random() * 8 + 1,
+                    cpa: Math.random() * 150 + 50,
+                    roas: Math.random() * 3 + 0.5
+                });
+            }
+            return sampleData;
+        }
+        
+        // Render Performance Table
+        function renderPerformanceTable(data) {
+            const tableHeaders = document.getElementById('table-headers');
+            const tableBody = document.getElementById('table-body');
             
+            // Set headers based on view
+            if (currentView === 'adset') {
+                tableHeaders.innerHTML = `
+                    <th>Ad Set Name</th>
+                    <th>Spend</th>
+                    <th>Clicks</th>
+                    <th>Impressions</th>
+                    <th>CTR</th>
+                    <th>CPC</th>
+                    <th>Bookings</th>
+                    <th>CPA</th>
+                    <th>ROAS</th>
+                    <th>Actions</th>
+                `;
+                
+                // Group data by ad set
+                const groupedData = groupByAdSet(data);
+                renderAdSetTable(groupedData, tableBody);
+                
+            } else {
+                tableHeaders.innerHTML = `
+                    <th>Ad Name</th>
+                    <th>Ad Set</th>
+                    <th>Spend</th>
+                    <th>Clicks</th>
+                    <th>CTR</th>
+                    <th>CPC</th>
+                    <th>Bookings</th>
+                    <th>CPA</th>
+                    <th>ROAS</th>
+                `;
+                
+                renderAdTable(data, tableBody);
+            }
+        }
+        
+        // Group data by ad set
+        function groupByAdSet(data) {
+            const grouped = {};
+            data.forEach(row => {
+                const adSet = row.ad_set_name;
+                if (!grouped[adSet]) {
+                    grouped[adSet] = {
+                        ads: [],
+                        totals: {
+                            spend: 0,
+                            clicks: 0,
+                            impressions: 0,
+                            conversions: 0,
+                            bookings: 0,
+                            revenue: 0
+                        }
+                    };
+                }
+                grouped[adSet].ads.push(row);
+                grouped[adSet].totals.spend += row.spend;
+                grouped[adSet].totals.clicks += row.clicks;
+                grouped[adSet].totals.impressions += row.impressions;
+                grouped[adSet].totals.conversions += row.conversions;
+                grouped[adSet].totals.bookings += row.bookings || 0;
+                grouped[adSet].totals.revenue += row.revenue;
+            });
+            
+            // Calculate aggregated metrics
+            Object.keys(grouped).forEach(adSet => {
+                const totals = grouped[adSet].totals;
+                totals.ctr = (totals.clicks / totals.impressions * 100).toFixed(2);
+                totals.cpc = (totals.spend / totals.clicks).toFixed(2);
+                totals.cpa = (totals.spend / totals.bookings).toFixed(2);
+                totals.roas = (totals.revenue / totals.spend).toFixed(2);
+            });
+            
+            return grouped;
+        }
+        
+        // Render Ad Set Table with expandable rows
+        function renderAdSetTable(groupedData, tableBody) {
+            let html = '';
+            
+            Object.keys(groupedData).forEach(adSet => {
+                const data = groupedData[adSet];
+                const totals = data.totals;
+                
+                html += `
+                    <tr class="expandable-row" onclick="toggleAdSetExpansion('${adSet}')">
+                        <td>
+                            <span class="expand-icon" id="icon-${adSet}">▶</span>
+                            <strong>${adSet}</strong>
+                        </td>
+                        <td>$${totals.spend.toLocaleString()}</td>
+                        <td>${totals.clicks.toLocaleString()}</td>
+                        <td>${totals.impressions.toLocaleString()}</td>
+                        <td>${totals.ctr}%</td>
+                        <td>$${totals.cpc}</td>
+                        <td>${totals.bookings}</td>
+                        <td>$${totals.cpa}</td>
+                        <td>${totals.roas}</td>
+                        <td>
+                            <button class="btn btn-sm" onclick="event.stopPropagation(); optimizeAdSet('${adSet}')">
+                                Optimize
+                            </button>
+                        </td>
+                    </tr>
+                `;
+                
+                // Add sub-rows for individual ads
+                data.ads.forEach(ad => {
+                    html += `
+                        <tr class="sub-row" id="sub-${adSet}">
+                            <td style="padding-left: 30px;">↳ ${ad.ad_name}</td>
+                            <td>$${ad.spend.toLocaleString()}</td>
+                            <td>${ad.clicks.toLocaleString()}</td>
+                            <td>${ad.impressions.toLocaleString()}</td>
+                            <td>${ad.ctr.toFixed(2)}%</td>
+                            <td>$${ad.cpc.toFixed(2)}</td>
+                            <td>${ad.bookings || 0}</td>
+                            <td>$${ad.cpa.toFixed(2)}</td>
+                            <td>${ad.roas.toFixed(2)}</td>
+                            <td>
+                                <button class="btn btn-sm btn-secondary" onclick="analyzeAd('${ad.ad_name}')">
+                                    Analyze
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            });
+            
+            tableBody.innerHTML = html;
+        }
+        
+        // Render Ad Table
+        function renderAdTable(data, tableBody) {
+            let html = '';
+            
+            data.forEach(ad => {
+                html += `
+                    <tr>
+                        <td><strong>${ad.ad_name}</strong></td>
+                        <td>${ad.ad_set_name}</td>
+                        <td>$${ad.spend.toLocaleString()}</td>
+                        <td>${ad.clicks.toLocaleString()}</td>
+                        <td>${ad.ctr.toFixed(2)}%</td>
+                        <td>$${ad.cpc.toFixed(2)}</td>
+                        <td>${ad.bookings || 0}</td>
+                        <td>$${ad.cpa.toFixed(2)}</td>
+                        <td>${ad.roas.toFixed(2)}</td>
+                    </tr>
+                `;
+            });
+            
+            tableBody.innerHTML = html;
+        }
+        
+        // Toggle Ad Set Expansion
+        function toggleAdSetExpansion(adSet) {
+            const subRows = document.querySelectorAll(`#sub-${adSet}`);
+            const icon = document.getElementById(`icon-${adSet}`);
+            
+            subRows.forEach(row => {
+                row.classList.toggle('show');
+            });
+            
+            icon.classList.toggle('expanded');
+            icon.textContent = icon.classList.contains('expanded') ? '▼' : '▶';
+        }
+        
+        // Load Optimization Recommendations
+        async function loadOptimizationRecommendations() {
             try {
                 const response = await fetch('/api/optimization-recommendations');
                 const recommendations = await response.json();
                 
-                container.innerHTML = '';
-                
-                recommendations.forEach(rec => {
-                    const item = document.createElement('div');
-                    item.className = `recommendation-item ${rec.action}`;
-                    item.innerHTML = `
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                            <strong>${rec.ad_name}</strong>
-                            <span style="background: #4a5568; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; text-transform: uppercase;">${rec.action}</span>
-                        </div>
-                        <div style="color: #4a5568; font-size: 14px; margin-bottom: 10px;">
-                            ${rec.ad_set_name}<br>
-                            ${rec.reason}
-                        </div>
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 10px; font-size: 12px; color: #718096;">
-                            <div>Spend: $${rec.current_spend.toFixed(2)}</div>
-                            <div>CTR: ${rec.current_ctr.toFixed(2)}%</div>
-                            <div>CPC: $${rec.current_cpc.toFixed(2)}</div>
-                            <div>ROAS: ${rec.current_roas.toFixed(2)}</div>
-                        </div>
-                    `;
-                    container.appendChild(item);
-                });
+                renderOptimizationRecommendations(recommendations);
                 
             } catch (error) {
-                console.error('Error loading recommendations:', error);
-                container.innerHTML = '<div style="color: red;">Error loading recommendations</div>';
+                console.error('Error loading optimization recommendations:', error);
+                document.getElementById('optimization-content').innerHTML = 
+                    '<div class="error">Error loading recommendations. Please try again.</div>';
             }
         }
-
-        // Generate creative brief
-        async function generateBrief() {
+        
+        // Render Optimization Recommendations
+        function renderOptimizationRecommendations(recommendations) {
+            const content = document.getElementById('optimization-content');
+            
+            if (!recommendations || recommendations.length === 0) {
+                content.innerHTML = '<div class="loading">No recommendations available.</div>';
+                return;
+            }
+            
+            let html = '';
+            
+            recommendations.forEach((rec, index) => {
+                const actionClass = `action-${rec.action}`;
+                
+                html += `
+                    <div class="recommendation-item">
+                        <div class="recommendation-header">
+                            <div class="recommendation-title">${rec.ad_name}</div>
+                            <div class="recommendation-action ${actionClass}">${rec.action.toUpperCase()}</div>
+                        </div>
+                        
+                        <div class="metrics-grid">
+                            <div class="metric-item">
+                                <div class="metric-value">$${rec.current_spend.toFixed(2)}</div>
+                                <div class="metric-label">Spend</div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-value">${rec.current_ctr.toFixed(2)}%</div>
+                                <div class="metric-label">CTR</div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-value">$${rec.current_cpc.toFixed(2)}</div>
+                                <div class="metric-label">CPC</div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-value">${rec.current_roas.toFixed(2)}</div>
+                                <div class="metric-label">ROAS</div>
+                            </div>
+                        </div>
+                        
+                        <p><strong>Reason:</strong> ${rec.reason}</p>
+                        
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="rec-${index}" onchange="toggleActionSelection(${index}, '${rec.action}', '${rec.ad_name}')">
+                            <label for="rec-${index}">Select for execution</label>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            content.innerHTML = html;
+        }
+        
+        // Toggle Action Selection
+        function toggleActionSelection(index, action, adName) {
+            const checkbox = document.getElementById(`rec-${index}`);
+            const selectedActionsDiv = document.getElementById('selected-actions');
+            
+            if (checkbox.checked) {
+                selectedActions.add({index, action, adName});
+            } else {
+                selectedActions.delete({index, action, adName});
+            }
+            
+            selectedActionsDiv.style.display = selectedActions.size > 0 ? 'block' : 'none';
+        }
+        
+        // Generate Creative Brief
+        async function generateCreativeBrief() {
             const campaignName = document.getElementById('campaign-name').value;
             const campaignType = document.getElementById('campaign-type').value;
-            const output = document.getElementById('brief-output');
+            const messagingPillar = document.getElementById('messaging-pillar').value;
+            const valuePillar = document.getElementById('value-pillar').value;
             
             if (!campaignName) {
                 alert('Please enter a campaign name');
                 return;
             }
             
-            output.textContent = 'Generating AI-enhanced brief...';
+            const briefContent = document.getElementById('brief-content');
+            briefContent.innerHTML = '<div class="loading">Generating AI-enhanced creative brief...</div>';
             
             try {
                 const response = await fetch('/api/creative-brief', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
                     body: JSON.stringify({
                         campaign_name: campaignName,
-                        campaign_type: campaignType
+                        campaign_type: campaignType,
+                        messaging_pillar: messagingPillar,
+                        value_pillar: valuePillar,
+                        creative_format: currentFormat
                     })
                 });
                 
                 const brief = await response.json();
                 
-                output.textContent = `Campaign: ${brief.campaign_name}
-Type: ${brief.campaign_type}
-Generated: ${new Date(brief.generated_at).toLocaleString()}
-
-${brief.ai_content}`;
+                if (brief.error) {
+                    briefContent.innerHTML = `<div class="error">Error: ${brief.error}</div>`;
+                } else {
+                    briefContent.innerHTML = `
+                        <div class="brief-content">
+                            <h4>📝 Creative Brief: ${brief.campaign_name}</h4>
+                            <p><strong>Type:</strong> ${brief.campaign_type} | <strong>Format:</strong> ${currentFormat}</p>
+                            <p><strong>Messaging Pillar:</strong> ${messagingPillar}</p>
+                            <p><strong>Value Pillar:</strong> ${valuePillar}</p>
+                            <hr>
+                            ${brief.ai_content}
+                        </div>
+                    `;
+                }
                 
             } catch (error) {
-                console.error('Error generating brief:', error);
-                output.textContent = 'Error generating brief';
+                briefContent.innerHTML = `<div class="error">Error generating brief: ${error.message}</div>`;
             }
         }
-
-        // Generate AI insights
-        async function generateInsights(type) {
-            const contentId = type === 'cluster' ? 'cluster-insights' : 'creative-insights';
-            const content = document.getElementById(contentId);
-            
-            content.textContent = 'Generating AI insights...';
+        
+        // Generate AI Insights
+        async function generateAIInsights(type) {
+            const insightsContent = document.getElementById('insights-content');
+            insightsContent.innerHTML = '<div class="loading">Generating AI insights...</div>';
             
             try {
                 const response = await fetch(`/api/ai-insights?type=${type}`);
-                const result = await response.json();
+                const data = await response.json();
                 
-                content.textContent = result.insights;
+                if (data.error) {
+                    insightsContent.innerHTML = `<div class="error">Error: ${data.error}</div>`;
+                } else {
+                    insightsContent.innerHTML = `
+                        <div class="insights-content">
+                            <h4>🤖 ${type.charAt(0).toUpperCase() + type.slice(1)} Analysis</h4>
+                            <hr>
+                            ${data.insights}
+                        </div>
+                    `;
+                }
                 
             } catch (error) {
-                console.error('Error generating insights:', error);
-                content.textContent = 'Error generating insights';
+                insightsContent.innerHTML = `<div class="error">Error generating insights: ${error.message}</div>`;
             }
         }
-
-        // Placeholder functions
-        function executeSelected() {
-            alert('Execute selected functionality will be available once Facebook API is integrated.');
+        
+        // Load Automation Status
+        async function loadAutomationStatus() {
+            try {
+                const response = await fetch('/api/automation-status');
+                const status = await response.json();
+                
+                const statusDiv = document.getElementById('automation-status');
+                statusDiv.innerHTML = `
+                    <div class="metrics-grid">
+                        <div class="metric-item">
+                            <div class="metric-value">${status.auto_refresh_enabled ? '✅' : '❌'}</div>
+                            <div class="metric-label">Auto Refresh</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-value">${status.google_sheets_connected ? '✅' : '❌'}</div>
+                            <div class="metric-label">Google Sheets</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-value">${status.facebook_api_connected ? '✅' : '❌'}</div>
+                            <div class="metric-label">Facebook API</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-value">${status.openai_configured ? '✅' : '❌'}</div>
+                            <div class="metric-label">OpenAI</div>
+                        </div>
+                    </div>
+                    
+                    <p><strong>Last Refresh:</strong> ${status.last_refresh ? new Date(status.last_refresh).toLocaleString() : 'Never'}</p>
+                    <p><strong>Next Refresh:</strong> ${status.next_scheduled_refresh}</p>
+                    <p><strong>Next Analysis:</strong> ${status.next_scheduled_analysis}</p>
+                    <p><strong>Date Range:</strong> ${status.date_range || 'June 2025 onwards'}</p>
+                `;
+                
+            } catch (error) {
+                document.getElementById('automation-status').innerHTML = 
+                    '<div class="error">Error loading automation status.</div>';
+            }
         }
-
-        function exportReport() {
-            alert('Export report functionality coming soon!');
+        
+        // Refresh All Data
+        async function refreshAllData() {
+            try {
+                const response = await fetch('/api/refresh-data', { method: 'POST' });
+                const result = await response.json();
+                
+                if (result.error) {
+                    alert(`Error: ${result.error}`);
+                } else {
+                    alert('Data refreshed successfully!');
+                    loadDashboard();
+                    loadAutomationStatus();
+                }
+                
+            } catch (error) {
+                alert(`Error refreshing data: ${error.message}`);
+            }
         }
+        
+        // Test APIs
+        async function testOpenAI() {
+            try {
+                const response = await fetch('/api/test-openai');
+                const result = await response.json();
+                
+                const testResults = document.getElementById('test-results');
+                testResults.innerHTML = `
+                    <div class="${result.status === 'success' ? 'success' : 'error'}">
+                        OpenAI Test: ${result.message}
+                    </div>
+                `;
+                
+            } catch (error) {
+                document.getElementById('test-results').innerHTML = 
+                    `<div class="error">OpenAI Test Failed: ${error.message}</div>`;
+            }
+        }
+        
+        async function testFacebook() {
+            try {
+                const response = await fetch('/api/test-facebook');
+                const result = await response.json();
+                
+                const testResults = document.getElementById('test-results');
+                testResults.innerHTML = `
+                    <div class="${result.status === 'success' ? 'success' : 'error'}">
+                        Facebook Test: ${result.message}
+                    </div>
+                `;
+                
+            } catch (error) {
+                document.getElementById('test-results').innerHTML = 
+                    `<div class="error">Facebook Test Failed: ${error.message}</div>`;
+            }
+        }
+        
+        // Initialize dashboard on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadDashboard();
+        });
     </script>
 </body>
 </html>
+
