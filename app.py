@@ -8,7 +8,7 @@ import schedule
 import time
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
-import openai
+from openai import OpenAI
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from docx import Document
@@ -28,10 +28,14 @@ class FacebookOptimizationTool:
     def setup_apis(self):
         """Initialize API clients"""
         try:
-            # OpenAI API
-            openai.api_key = os.getenv('OPENAI_API_KEY')
-            openai.api_base = os.getenv('OPENAI_API_BASE', 'https://api.openai.com/v1')
-            print("✅ OpenAI API client initialized")
+            # OpenAI API (updated for new version)
+            api_key = os.getenv('OPENAI_API_KEY')
+            if api_key:
+                self.openai_client = OpenAI(api_key=api_key)
+                print("✅ OpenAI API client initialized")
+            else:
+                self.openai_client = None
+                print("⚠️ OpenAI API key not found")
             
             # Google Sheets API
             self.setup_google_sheets()
@@ -163,6 +167,9 @@ class FacebookOptimizationTool:
     def generate_ai_insights(self, insight_type='cluster'):
         """Generate AI-powered insights using OpenAI"""
         try:
+            if not self.openai_client:
+                return "OpenAI API not configured. Please add your OPENAI_API_KEY environment variable."
+            
             if insight_type == 'cluster':
                 prompt = f"""
                 Analyze this Facebook ad performance data and provide cluster analysis insights:
@@ -197,7 +204,7 @@ class FacebookOptimizationTool:
                 4. Seasonal campaign ideas
                 """
             
-            response = openai.ChatCompletion.create(
+            response = self.openai_client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=1000,
@@ -212,6 +219,15 @@ class FacebookOptimizationTool:
     def generate_creative_brief(self, campaign_name, campaign_type):
         """Generate AI-enhanced creative brief"""
         try:
+            if not self.openai_client:
+                return {
+                    'campaign_name': campaign_name,
+                    'campaign_type': campaign_type,
+                    'generated_at': datetime.now().isoformat(),
+                    'error': 'OpenAI API not configured',
+                    'ai_content': 'Please add your OPENAI_API_KEY environment variable to enable AI features.'
+                }
+            
             # Get performance insights
             top_performers = self.performance_data.nlargest(5, 'roas')
             
@@ -236,7 +252,7 @@ class FacebookOptimizationTool:
             Make it actionable and specific to Facebook advertising.
             """
             
-            response = openai.ChatCompletion.create(
+            response = self.openai_client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=1500,
