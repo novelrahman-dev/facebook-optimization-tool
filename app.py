@@ -490,10 +490,11 @@ class FacebookOptimizationTool:
                 survey_complete = self.safe_float(web_row.get('Web Pages Unique Count of Sessions with Match Results', 0))
                 checkout_starts = self.safe_float(web_row.get('Count of Sessions with Checkout Started (V2 included)', 0))
                 
-                # Attribution data
+                # Attribution data - Fixed Offer Spend mapping
                 bookings = self.safe_float(attr_row.get('Attribution Attributed NPRs', 0))
                 revenue = self.safe_float(attr_row.get('Attribution Attibuted Total Revenue (Predicted) (USD)', 0))
                 completion_rate = self.safe_float(attr_row.get('Attribution Attibuted PAS (Predicted)', 0.45))
+                # Fixed mapping for Offer Spend
                 promo_spend = self.safe_float(attr_row.get('Attibuted Offer Spend (Predicted) (USD)', 0))
                 
                 # Apply completion rate failsafe (39%-51% range, default 45%)
