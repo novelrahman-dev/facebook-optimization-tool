@@ -161,7 +161,7 @@ class FacebookOptimizationTool:
             # Load Google Sheets data
             self.load_google_sheets_data()
             
-            # Load Facebook API data
+            # Load Facebook API data with pagination
             self.load_facebook_api_data()
             
             # Process and combine data
@@ -203,37 +203,107 @@ class FacebookOptimizationTool:
             print(f"❌ Google Sheets loading error: {e}")
 
     def load_facebook_api_data(self):
-        """Load marketing metrics from Facebook API"""
+        """Load marketing metrics from Facebook API with pagination and error handling"""
         try:
             if not self.fb_access_token or not self.fb_ad_account_id:
                 print("⚠️ Facebook API credentials not available")
                 return
             
-            # Date range: June 1, 2025 onwards
-            since_date = "2025-06-01"
+            # Use shorter date range to reduce data volume
+            since_date = "2025-08-15"  # Start from August 15th (last 2 weeks)
             until_date = datetime.now().strftime("%Y-%m-%d")
             
-            # Facebook API endpoint for ads with insights
-            url = f"https://graph.facebook.com/v18.0/{self.fb_ad_account_id}/ads"
+            print(f"🔄 Loading Facebook API data from {since_date} to {until_date}")
             
-            params = {
-                'access_token': self.fb_access_token,
-                'fields': 'name,adset{name},insights{impressions,clicks,actions,spend,cpm,cpc,ctr}',
-                'time_range': json.dumps({
-                    'since': since_date,
-                    'until': until_date
-                }),
-                'limit': 1000
-            }
+            all_ads_data = []
+            after_cursor = None
+            page_count = 0
+            max_pages = 5  # Limit to prevent infinite loops and reduce data volume
             
-            response = requests.get(url, params=params, timeout=30)
+            while page_count < max_pages:
+                try:
+                    # Facebook API endpoint for ads with insights
+                    url = f"https://graph.facebook.com/v18.0/{self.fb_ad_account_id}/ads"
+                    
+                    params = {
+                        'access_token': self.fb_access_token,
+                        'fields': 'name,adset{name},insights{impressions,clicks,spend,cpm,cpc,ctr}',
+                        'time_range': json.dumps({
+                            'since': since_date,
+                            'until': until_date
+                        }),
+                        'limit': 25,  # Smaller page size to reduce load
+                        'level': 'ad'
+                    }
+                    
+                    if after_cursor:
+                        params['after'] = after_cursor
+                    
+                    print(f"📡 Fetching page {page_count + 1} from Facebook API...")
+                    
+                    response = requests.get(url, params=params, timeout=30)
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        ads_data = data.get('data', [])
+                        
+                        if not ads_data:
+                            print("📄 No more ads data available")
+                            break
+                        
+                        all_ads_data.extend(ads_data)
+                        print(f"✅ Loaded {len(ads_data)} ads from page {page_count + 1}")
+                        
+                        # Check for next page
+                        paging = data.get('paging', {})
+                        cursors = paging.get('cursors', {})
+                        after_cursor = cursors.get('after')
+                        
+                        if not after_cursor:
+                            print("📄 Reached end of data")
+                            break
+                        
+                        page_count += 1
+                        
+                        # Add delay to respect rate limits
+                        time.sleep(1)
+                        
+                    elif response.status_code == 400:
+                        error_data = response.json()
+                        error_message = error_data.get('error', {}).get('message', 'Unknown error')
+                        
+                        if 'reduce the amount of data' in error_message.lower():
+                            print("⚠️ Facebook API data limit reached, trying with minimal fields...")
+                            # Try with minimal fields only
+                            params['fields'] = 'name,adset{name},insights{impressions,clicks}'
+                            params['limit'] = 10
+                            
+                            response = requests.get(url, params=params, timeout=30)
+                            if response.status_code == 200:
+                                data = response.json()
+                                all_ads_data.extend(data.get('data', []))
+                                print(f"✅ Loaded {len(data.get('data', []))} ads with minimal fields")
+                            break
+                        else:
+                            print(f"❌ Facebook API error: {response.status_code} - {error_message}")
+                            break
+                    
+                    else:
+                        print(f"❌ Facebook API error: {response.status_code} - {response.text}")
+                        break
+                        
+                except requests.exceptions.Timeout:
+                    print("⏰ Facebook API request timeout, retrying...")
+                    time.sleep(2)
+                    continue
+                except Exception as e:
+                    print(f"❌ Facebook API request error: {e}")
+                    break
             
-            if response.status_code == 200:
-                data = response.json()
-                ads_data = data.get('data', [])
-                
-                fb_api_records = []
-                for ad in ads_data:
+            # Process the collected ads data
+            fb_api_records = []
+            for ad in all_ads_data:
+                try:
                     ad_name = ad.get('name', '')
                     adset_info = ad.get('adset', {})
                     adset_name = adset_info.get('name', '') if adset_info else ''
@@ -244,23 +314,11 @@ class FacebookOptimizationTool:
                         total_impressions = 0
                         total_clicks = 0
                         total_spend = 0
-                        total_actions = {}
                         
                         for insight in insights:
                             total_impressions += self.safe_float(insight.get('impressions', 0))
                             total_clicks += self.safe_float(insight.get('clicks', 0))
                             total_spend += self.safe_float(insight.get('spend', 0))
-                            
-                            # Process actions (conversions)
-                            actions = insight.get('actions', [])
-                            if isinstance(actions, list):
-                                for action in actions:
-                                    action_type = action.get('action_type', '')
-                                    value = self.safe_float(action.get('value', 0))
-                                    if action_type in total_actions:
-                                        total_actions[action_type] += value
-                                    else:
-                                        total_actions[action_type] = value
                         
                         # Calculate metrics
                         ctr = (total_clicks / total_impressions * 100) if total_impressions > 0 else 0
@@ -276,26 +334,26 @@ class FacebookOptimizationTool:
                             'spend': total_spend,
                             'ctr': ctr,
                             'cpc': cpc,
-                            'cpm': cpm,
-                            'actions': total_actions
+                            'cpm': cpm
                         })
-                
-                self.fb_api_data = fb_api_records
-                print(f"✅ Loaded {len(fb_api_records)} ads from Facebook API (June 2025 onwards)")
-                
-                # Debug: Show sample data for the specific ad set
-                for record in fb_api_records:
-                    if '071425_CEO_AppointmentPage_Calgary_Amazon_130_EngagedShoppers_Video_Feed-Stories-Reels_EXP-InsuranceLP' in record['adset_name']:
-                        print(f"📊 Found target ad set: {record['adset_name']}")
-                        print(f"   - Impressions: {record['impressions']:,.0f}")
-                        print(f"   - Clicks: {record['clicks']:,.0f}")
-                        print(f"   - CTR: {record['ctr']:.2f}%")
-                        print(f"   - CPC: ${record['cpc']:.2f}")
-                        print(f"   - CPM: ${record['cpm']:.2f}")
-                
-            else:
-                print(f"❌ Facebook API error: {response.status_code} - {response.text}")
-                self.fb_api_data = []
+                        
+                except Exception as e:
+                    print(f"⚠️ Error processing ad data: {e}")
+                    continue
+            
+            self.fb_api_data = fb_api_records
+            print(f"✅ Processed {len(fb_api_records)} ads from Facebook API")
+            
+            # Debug: Show sample data for the specific ad set
+            for record in fb_api_records[:5]:  # Show first 5 records
+                if '071425_CEO_AppointmentPage_Calgary_Amazon_130_EngagedShoppers_Video_Feed-Stories-Reels_EXP-InsuranceLP' in record.get('adset_name', ''):
+                    print(f"📊 Found target ad set: {record['adset_name']}")
+                    print(f"   - Impressions: {record['impressions']:,.0f}")
+                    print(f"   - Clicks: {record['clicks']:,.0f}")
+                    print(f"   - CTR: {record['ctr']:.2f}%")
+                    print(f"   - CPC: ${record['cpc']:.2f}")
+                    print(f"   - CPM: ${record['cpm']:.2f}")
+                    break
                 
         except Exception as e:
             print(f"❌ Facebook API loading error: {e}")
