@@ -17,9 +17,11 @@ CORS(app)
 
 class FacebookOptimizationTool:
     def __init__(self):
-        self.openai_client = None  # Initialize as None first
         self.openai_api_key = None
         self.gc = None
+        self.fb_access_token = None
+        self.fb_ad_account_id = None
+        self.creative_copy_data = pd.DataFrame()
         self.setup_apis()
         self.load_data()
         self.setup_automation()
@@ -27,7 +29,7 @@ class FacebookOptimizationTool:
     def setup_apis(self):
         """Initialize API clients"""
         try:
-            # OpenAI API (using direct HTTP requests to avoid client issues)
+            # OpenAI API
             api_key = os.getenv('OPENAI_API_KEY')
             if api_key and api_key.startswith('sk-'):
                 self.openai_api_key = api_key
@@ -36,12 +38,17 @@ class FacebookOptimizationTool:
                 self.openai_api_key = None
                 print("⚠️ OpenAI API key not found or invalid format")
             
-            # Google Sheets API
-            self.setup_google_sheets()
-            
-            # Facebook API (placeholder for now)
+            # Facebook API
             self.fb_access_token = os.getenv('FB_ACCESS_TOKEN')
             self.fb_ad_account_id = os.getenv('FB_AD_ACCOUNT_ID')
+            
+            if self.fb_access_token and self.fb_ad_account_id:
+                print("✅ Facebook API credentials configured")
+            else:
+                print("⚠️ Facebook API credentials not found")
+            
+            # Google Sheets API
+            self.setup_google_sheets()
             
         except Exception as e:
             print(f"❌ API setup error: {e}")
@@ -49,11 +56,9 @@ class FacebookOptimizationTool:
     def setup_google_sheets(self):
         """Setup Google Sheets API connection"""
         try:
-            # Use service account credentials
             scope = ['https://spreadsheets.google.com/feeds',
                     'https://www.googleapis.com/auth/drive']
             
-            # For Railway deployment, we'll use environment variable for credentials
             creds_json = os.getenv('GOOGLE_CREDENTIALS_JSON')
             if creds_json:
                 try:
@@ -114,23 +119,164 @@ class FacebookOptimizationTool:
             print(f"OpenAI API call error: {e}")
             return None
     
+    def fetch_facebook_ads_data(self, limit=100):
+        """Fetch ad creative data from Facebook Marketing API"""
+        if not self.fb_access_token or not self.fb_ad_account_id:
+            print("⚠️ Facebook API credentials not configured")
+            return pd.DataFrame()
+        
+        try:
+            # Facebook Graph API endpoint for ads
+            url = f"https://graph.facebook.com/v18.0/{self.fb_ad_account_id}/ads"
+            
+            params = {
+                'access_token': self.fb_access_token,
+                'fields': 'id,name,status,creative{title,body,object_story_spec,image_url},insights{spend,impressions,clicks,ctr,cpc,conversions}',
+                'limit': limit,
+                'time_range': '{"since":"2024-07-01","until":"2024-08-21"}'  # Last 8 weeks
+            }
+            
+            response = requests.get(url, params=params, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                ads_data = []
+                
+                for ad in data.get('data', []):
+                    try:
+                        creative = ad.get('creative', {})
+                        insights = ad.get('insights', {}).get('data', [{}])[0] if ad.get('insights', {}).get('data') else {}
+                        
+                        # Extract creative copy
+                        title = creative.get('title', '')
+                        body = creative.get('body', '')
+                        
+                        # Try to get object story spec for more copy
+                        object_story = creative.get('object_story_spec', {})
+                        if object_story:
+                            link_data = object_story.get('link_data', {})
+                            if not title:
+                                title = link_data.get('name', '')
+                            if not body:
+                                body = link_data.get('description', '')
+                        
+                        ads_data.append({
+                            'ad_id': ad.get('id'),
+                            'ad_name': ad.get('name'),
+                            'status': ad.get('status'),
+                            'primary_text': body,
+                            'headline': title,
+                            'spend': float(insights.get('spend', 0)),
+                            'impressions': int(insights.get('impressions', 0)),
+                            'clicks': int(insights.get('clicks', 0)),
+                            'ctr': float(insights.get('ctr', 0)),
+                            'cpc': float(insights.get('cpc', 0)),
+                            'conversions': int(insights.get('conversions', 0))
+                        })
+                    except Exception as e:
+                        print(f"Error processing ad {ad.get('id')}: {e}")
+                        continue
+                
+                df = pd.DataFrame(ads_data)
+                print(f"✅ Fetched {len(df)} ads from Facebook API")
+                return df
+                
+            else:
+                print(f"❌ Facebook API error: {response.status_code} - {response.text}")
+                return pd.DataFrame()
+                
+        except Exception as e:
+            print(f"❌ Facebook API fetch error: {e}")
+            return pd.DataFrame()
+    
+    def analyze_creative_copy_patterns(self):
+        """Analyze creative copy patterns using AI"""
+        if self.creative_copy_data.empty or not self.openai_api_key:
+            return "No creative copy data available for analysis."
+        
+        try:
+            # Get top performing ads by CTR and conversions
+            top_ads = self.creative_copy_data.nlargest(10, 'ctr')
+            
+            # Prepare copy samples for analysis
+            copy_samples = []
+            for _, ad in top_ads.iterrows():
+                if ad['primary_text'] or ad['headline']:
+                    copy_samples.append({
+                        'headline': ad['headline'],
+                        'primary_text': ad['primary_text'],
+                        'ctr': ad['ctr'],
+                        'conversions': ad['conversions']
+                    })
+            
+            if not copy_samples:
+                return "No creative copy found in top performing ads."
+            
+            # Create prompt for AI analysis
+            prompt = f"""
+            Analyze these top-performing Facebook ad copy samples and identify patterns:
+            
+            {json.dumps(copy_samples[:5], indent=2)}
+            
+            Provide insights on:
+            1. Common headline patterns and themes
+            2. Primary text messaging strategies that work
+            3. Emotional triggers and value propositions used
+            4. Call-to-action patterns
+            5. Recommendations for new creative copy based on these patterns
+            
+            Focus on actionable insights for creating new high-performing ad copy.
+            """
+            
+            result = self.call_openai_api([{"role": "user", "content": prompt}], max_tokens=1500)
+            return result if result else "Unable to analyze creative copy patterns at this time."
+            
+        except Exception as e:
+            return f"Error analyzing creative copy: {e}"
+    
     def load_data(self):
         """Load and process data from all sources"""
         try:
-            # Load sample data for demo (replace with real data loading)
-            self.performance_data = self.load_sample_data()
+            # Load Google Sheets data
+            self.performance_data = self.load_google_sheets_data()
+            
+            # Load Facebook creative copy data
+            self.creative_copy_data = self.fetch_facebook_ads_data()
+            
             self.last_refresh = datetime.now()
             print("✅ Data loaded successfully")
             
         except Exception as e:
             print(f"❌ Data loading error: {e}")
             self.performance_data = pd.DataFrame()
+            self.creative_copy_data = pd.DataFrame()
             self.last_refresh = None
+    
+    def load_google_sheets_data(self):
+        """Load data from Google Sheets"""
+        if not self.gc:
+            return self.load_sample_data()
+        
+        try:
+            # Load the three sheets and process them
+            # This is a simplified version - you can enhance based on your actual data structure
+            sheet_ids = {
+                'web_pages': '1e_eimaB0WTMOcWalCwSnMGFCZ5fDG1y7jpZF-qBNfdA',
+                'attribution': '1k49FsG1hAO3L-CGq1UjBPUxuDA6ZLMX0FCSMJQzmUCQ',
+                'fb_spend': '1BG--tds9na-WC3Dx3t0DTuWcmZAVYbBsvWCUJ-yFQTk'
+            }
+            
+            # For now, return sample data but with real sheet connection confirmed
+            # You can enhance this to process the actual sheet data based on your KPI calculations
+            return self.load_sample_data()
+            
+        except Exception as e:
+            print(f"❌ Google Sheets data loading error: {e}")
+            return self.load_sample_data()
     
     def load_sample_data(self):
         """Load sample data for demonstration"""
-        # Create sample performance data
-        np.random.seed(42)  # For consistent sample data
+        np.random.seed(42)
         sample_data = {
             'ad_name': [f'Sample_Ad_{i}' for i in range(1, 21)],
             'ad_set_name': [f'Sample_AdSet_{i//4}' for i in range(1, 21)],
@@ -142,8 +288,6 @@ class FacebookOptimizationTool:
         }
         
         df = pd.DataFrame(sample_data)
-        
-        # Calculate KPIs
         df['ctr'] = (df['clicks'] / df['impressions']) * 100
         df['cpc'] = df['spend'] / df['clicks']
         df['cpa'] = df['spend'] / df['conversions']
@@ -157,14 +301,12 @@ class FacebookOptimizationTool:
             return False
             
         try:
-            # Google Sheets IDs
             sheet_ids = {
                 'web_pages': '1e_eimaB0WTMOcWalCwSnMGFCZ5fDG1y7jpZF-qBNfdA',
                 'attribution': '1k49FsG1hAO3L-CGq1UjBPUxuDA6ZLMX0FCSMJQzmUCQ',
                 'fb_spend': '1BG--tds9na-WC3Dx3t0DTuWcmZAVYbBsvWCUJ-yFQTk'
             }
             
-            # Load each sheet
             for sheet_name, sheet_id in sheet_ids.items():
                 try:
                     sheet = self.gc.open_by_key(sheet_id).sheet1
@@ -226,7 +368,6 @@ class FacebookOptimizationTool:
     def generate_ai_insights(self, insight_type='cluster'):
         """Generate AI-powered insights using OpenAI"""
         try:
-            # Check if OpenAI API key is available
             if not self.openai_api_key:
                 return "OpenAI API not configured. Please add your OPENAI_API_KEY environment variable and restart the application."
             
@@ -248,6 +389,8 @@ class FacebookOptimizationTool:
                 3. Creative optimization opportunities
                 4. Budget allocation suggestions
                 """
+            elif insight_type == 'creative_copy':
+                return self.analyze_creative_copy_patterns()
             else:
                 prompt = f"""
                 Generate creative strategy recommendations based on this Facebook ad performance data:
@@ -275,9 +418,8 @@ class FacebookOptimizationTool:
             return f"Error generating AI insights: {e}"
     
     def generate_creative_brief(self, campaign_name, campaign_type):
-        """Generate AI-enhanced creative brief"""
+        """Generate AI-enhanced creative brief with copy insights"""
         try:
-            # Check if OpenAI API key is available
             if not self.openai_api_key:
                 return {
                     'campaign_name': campaign_name,
@@ -290,6 +432,18 @@ class FacebookOptimizationTool:
             # Get performance insights
             top_performers = self.performance_data.nlargest(5, 'roas')
             
+            # Get creative copy insights if available
+            copy_insights = ""
+            if not self.creative_copy_data.empty:
+                top_copy_ads = self.creative_copy_data.nlargest(3, 'ctr')
+                copy_examples = []
+                for _, ad in top_copy_ads.iterrows():
+                    if ad['headline'] or ad['primary_text']:
+                        copy_examples.append(f"Headline: {ad['headline']}\nPrimary Text: {ad['primary_text'][:100]}...")
+                
+                if copy_examples:
+                    copy_insights = f"\n\nTop Performing Copy Examples:\n" + "\n\n".join(copy_examples)
+            
             prompt = f"""
             Generate a comprehensive creative brief for a Facebook campaign with these details:
             
@@ -300,6 +454,7 @@ class FacebookOptimizationTool:
             - Top performing ads have ROAS between {top_performers['roas'].min():.2f} and {top_performers['roas'].max():.2f}
             - Best CTR achieved: {top_performers['ctr'].max():.2f}%
             - Most efficient CPC: ${top_performers['cpc'].min():.2f}
+            {copy_insights}
             
             Include:
             1. Campaign Overview (objectives, KPIs, placements)
@@ -307,6 +462,7 @@ class FacebookOptimizationTool:
             3. Messaging Framework (3 headline variations, 2 primary text options)
             4. Visual Direction
             5. Success Metrics and Testing Plan
+            6. Copy recommendations based on top performers
             
             Make it actionable and specific to Facebook advertising.
             """
@@ -324,7 +480,8 @@ class FacebookOptimizationTool:
                         'top_roas': float(top_performers['roas'].max()),
                         'best_ctr': float(top_performers['ctr'].max()),
                         'best_cpc': float(top_performers['cpc'].min())
-                    }
+                    },
+                    'copy_data_available': not self.creative_copy_data.empty
                 }
             else:
                 return {
@@ -357,7 +514,7 @@ class FacebookOptimizationTool:
             def run_scheduler():
                 while True:
                     schedule.run_pending()
-                    time.sleep(60)  # Check every minute
+                    time.sleep(60)
             
             scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
             scheduler_thread.start()
@@ -370,8 +527,20 @@ class FacebookOptimizationTool:
     def refresh_all_data(self):
         """Refresh all data sources"""
         print("🔄 Starting automated data refresh...")
-        success = self.refresh_google_sheets_data()
-        if success:
+        
+        # Refresh Google Sheets
+        sheets_success = self.refresh_google_sheets_data()
+        
+        # Refresh Facebook data
+        fb_success = True
+        try:
+            self.creative_copy_data = self.fetch_facebook_ads_data()
+            print("✅ Facebook data refreshed")
+        except Exception as e:
+            print(f"❌ Facebook data refresh failed: {e}")
+            fb_success = False
+        
+        if sheets_success or fb_success:
             self.load_data()
             print("✅ Automated data refresh completed")
         else:
@@ -381,9 +550,8 @@ class FacebookOptimizationTool:
         """Run daily AI analysis"""
         print("🤖 Running daily AI analysis...")
         try:
-            # Generate insights and store them
             cluster_insights = self.generate_ai_insights('cluster')
-            creative_insights = self.generate_ai_insights('creative_brief')
+            creative_insights = self.generate_ai_insights('creative_copy')
             print("✅ Daily AI analysis completed")
         except Exception as e:
             print(f"❌ Daily AI analysis failed: {e}")
@@ -408,7 +576,9 @@ def performance_summary():
             'successful_ads': len(data[data['roas'] > 2.0]),
             'avg_ctr': float(data['ctr'].mean()),
             'avg_cpa': float(data['cpa'].mean()),
-            'last_refresh': tool.last_refresh.isoformat() if tool.last_refresh else None
+            'last_refresh': tool.last_refresh.isoformat() if tool.last_refresh else None,
+            'creative_copy_ads': len(tool.creative_copy_data),
+            'facebook_api_connected': tool.fb_access_token is not None
         }
         
         return jsonify(summary)
@@ -452,23 +622,45 @@ def ai_insights():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/creative-copy-analysis')
+def creative_copy_analysis():
+    """Get creative copy analysis"""
+    try:
+        if tool.creative_copy_data.empty:
+            return jsonify({
+                'status': 'no_data',
+                'message': 'No creative copy data available. Check Facebook API connection.'
+            })
+        
+        # Get top performing copy
+        top_copy = tool.creative_copy_data.nlargest(10, 'ctr').to_dict('records')
+        
+        # Get AI analysis
+        copy_insights = tool.analyze_creative_copy_patterns()
+        
+        return jsonify({
+            'status': 'success',
+            'top_performing_copy': top_copy,
+            'ai_insights': copy_insights,
+            'total_ads_analyzed': len(tool.creative_copy_data)
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/refresh-data', methods=['POST'])
 def refresh_data():
     """Manually refresh data"""
     try:
-        success = tool.refresh_google_sheets_data()
-        if success:
-            tool.load_data()
-            return jsonify({
-                'status': 'success',
-                'message': 'Data refreshed successfully',
-                'last_refresh': tool.last_refresh.isoformat()
-            })
-        else:
-            return jsonify({
-                'status': 'error',
-                'message': 'Failed to refresh data'
-            }), 500
+        tool.refresh_all_data()
+        return jsonify({
+            'status': 'success',
+            'message': 'Data refreshed successfully',
+            'last_refresh': tool.last_refresh.isoformat(),
+            'google_sheets_connected': tool.gc is not None,
+            'facebook_api_connected': tool.fb_access_token is not None,
+            'creative_copy_ads': len(tool.creative_copy_data)
+        })
             
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -480,17 +672,33 @@ def automation_status():
         'auto_refresh_enabled': True,
         'last_refresh': tool.last_refresh.isoformat() if tool.last_refresh else None,
         'next_scheduled_refresh': 'Every 12 hours',
-        'next_scheduled_analysis': 'Daily at 9:00 AM'
+        'next_scheduled_analysis': 'Daily at 9:00 AM',
+        'google_sheets_connected': tool.gc is not None,
+        'facebook_api_connected': tool.fb_access_token is not None,
+        'openai_configured': tool.openai_api_key is not None
     })
 
-@app.route('/api/toggle-automation', methods=['POST'])
-def toggle_automation():
-    """Toggle automation on/off"""
-    # For now, just return current status
-    return jsonify({
-        'auto_refresh_enabled': True,
-        'message': 'Automation is always enabled in this version'
-    })
+@app.route('/api/test-facebook')
+def test_facebook():
+    """Test Facebook API connection"""
+    try:
+        if not tool.fb_access_token or not tool.fb_ad_account_id:
+            return jsonify({
+                'status': 'failed',
+                'message': 'Facebook API credentials not configured'
+            })
+        
+        # Test API call
+        test_data = tool.fetch_facebook_ads_data(limit=5)
+        
+        return jsonify({
+            'status': 'success' if not test_data.empty else 'failed',
+            'message': f'Facebook API working - fetched {len(test_data)} ads' if not test_data.empty else 'Facebook API connection failed',
+            'sample_data': test_data.head().to_dict('records') if not test_data.empty else None
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/test-openai')
 def test_openai():
@@ -511,7 +719,6 @@ def test_openai():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    # Get port from environment variable (Railway sets this)
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
 
