@@ -268,6 +268,7 @@ class FacebookOptimizationTool:
                         cpm = total_spend / total_impressions * 1000 if total_impressions > 0 else 0
                         
                         fb_api_records.append({
+                            'ad_id': ad.get('id', ''),
                             'ad_name': ad_name,
                             'adset_name': adset_name,
                             'impressions': total_impressions,
@@ -385,6 +386,7 @@ class FacebookOptimizationTool:
             for fb_api_row in self.fb_api_data:
                 ad_set_name = str(fb_api_row.get('adset_name', '')).strip()
                 ad_name = str(fb_api_row.get('ad_name', '')).strip()
+                ad_id = str(fb_api_row.get('ad_id', '')).strip()
                 
                 # Skip empty rows
                 if not ad_set_name or not ad_name:
@@ -490,6 +492,7 @@ class FacebookOptimizationTool:
                 }
                 
                 combined_row = {
+                    'ad_id': ad_id,
                     'ad_set_name': ad_set_name,
                     'ad_name': ad_name,
                     'spend': spend,
@@ -548,7 +551,7 @@ class FacebookOptimizationTool:
             print(f"❌ Data processing error: {e}")
 
     def get_performance_summary(self):
-        """Get performance summary statistics"""
+        """Get performance summary statistics with corrected calculations"""
         if not self.performance_data:
             return {
                 'total_ads': 0,
@@ -557,25 +560,48 @@ class FacebookOptimizationTool:
                 'total_clicks': 0,
                 'total_impressions': 0,
                 'total_bookings': 0,
+                'total_offer_spend': 0,
                 'avg_ctr': 0,
                 'avg_cpc': 0,
                 'avg_cpa': 0,
                 'avg_roas': 0,
                 'avg_cpm': 0,
+                'avg_completion_rate': 0,
+                'avg_funnel_start_rate': 0,
+                'avg_booking_rate': 0,
+                'overall_roas': 0,
+                'overall_ctr': 0,
+                'roi': 0,
                 'successful_ads': 0
             }
         
+        # Calculate totals
         total_spend = sum(ad['spend'] for ad in self.performance_data)
         total_revenue = sum(ad['revenue'] for ad in self.performance_data)
         total_clicks = sum(ad['clicks'] for ad in self.performance_data)
         total_impressions = sum(ad['impressions'] for ad in self.performance_data)
         total_bookings = sum(ad['bookings'] for ad in self.performance_data)
+        total_offer_spend = sum(ad['promo_spend'] for ad in self.performance_data)
+        
+        # Calculate overall metrics (corrected)
+        overall_roas = total_revenue / total_spend if total_spend > 0 else 0
+        overall_ctr = (total_clicks / total_impressions * 100) if total_impressions > 0 else 0
+        roi = ((total_revenue - total_offer_spend - total_spend) / total_revenue * 100) if total_revenue > 0 else 0
+        
+        # Calculate averages (excluding zero values where appropriate)
+        ads_with_cpc = [ad for ad in self.performance_data if ad['cpc'] > 0]
+        ads_with_cpm = [ad for ad in self.performance_data if ad['cpm'] > 0]
+        ads_with_cpa = [ad for ad in self.performance_data if ad['cpa'] > 0]
+        ads_with_roas = [ad for ad in self.performance_data if ad['roas'] > 0]
         
         avg_ctr = sum(ad['ctr'] for ad in self.performance_data) / len(self.performance_data)
-        avg_cpc = sum(ad['cpc'] for ad in self.performance_data if ad['cpc'] > 0) / max(1, len([ad for ad in self.performance_data if ad['cpc'] > 0]))
-        avg_cpm = sum(ad['cpm'] for ad in self.performance_data if ad['cpm'] > 0) / max(1, len([ad for ad in self.performance_data if ad['cpm'] > 0]))
-        avg_cpa = sum(ad['cpa'] for ad in self.performance_data if ad['cpa'] > 0) / max(1, len([ad for ad in self.performance_data if ad['cpa'] > 0]))
-        avg_roas = sum(ad['roas'] for ad in self.performance_data if ad['roas'] > 0) / max(1, len([ad for ad in self.performance_data if ad['roas'] > 0]))
+        avg_cpc = sum(ad['cpc'] for ad in ads_with_cpc) / max(1, len(ads_with_cpc))
+        avg_cpm = sum(ad['cpm'] for ad in ads_with_cpm) / max(1, len(ads_with_cpm))
+        avg_cpa = sum(ad['cpa'] for ad in ads_with_cpa) / max(1, len(ads_with_cpa))
+        avg_roas = sum(ad['roas'] for ad in ads_with_roas) / max(1, len(ads_with_roas))
+        avg_completion_rate = sum(ad['completion_rate'] for ad in self.performance_data) / len(self.performance_data)
+        avg_funnel_start_rate = sum(ad['funnel_start_rate'] for ad in self.performance_data) / len(self.performance_data)
+        avg_booking_rate = sum(ad['booking_conversion_rate'] for ad in self.performance_data) / len(self.performance_data)
         
         successful_ads = len([ad for ad in self.performance_data if ad['all_criteria_met']])
         
@@ -586,11 +612,18 @@ class FacebookOptimizationTool:
             'total_clicks': total_clicks,
             'total_impressions': total_impressions,
             'total_bookings': total_bookings,
+            'total_offer_spend': total_offer_spend,
             'avg_ctr': avg_ctr,
             'avg_cpc': avg_cpc,
             'avg_cpm': avg_cpm,
             'avg_cpa': avg_cpa,
             'avg_roas': avg_roas,
+            'avg_completion_rate': avg_completion_rate,
+            'avg_funnel_start_rate': avg_funnel_start_rate,
+            'avg_booking_rate': avg_booking_rate,
+            'overall_roas': overall_roas,
+            'overall_ctr': overall_ctr,
+            'roi': roi,
             'successful_ads': successful_ads
         }
 
@@ -613,8 +646,10 @@ class FacebookOptimizationTool:
             if (ad['roas'] < self.optimization_rules['pause_roas_threshold'] and 
                 ad['spend'] > self.optimization_rules['pause_spend_threshold']):
                 recommendations.append({
+                    'id': f"pause_{ad['ad_id']}_{len(recommendations)}",
                     'action': 'pause',
                     'type': 'ad',
+                    'ad_id': ad['ad_id'],
                     'name': ad['ad_name'],
                     'ad_set': ad['ad_set_name'],
                     'reason': f'Low ROAS ({ad["roas"]:.2f}) with significant spend (${ad["spend"]:.2f})',
@@ -631,8 +666,10 @@ class FacebookOptimizationTool:
             elif (ad['cpa'] > self.optimization_rules['pause_cpa_threshold'] and 
                   ad['spend'] > self.optimization_rules['pause_cpa_spend_threshold']):
                 recommendations.append({
+                    'id': f"pause_{ad['ad_id']}_{len(recommendations)}",
                     'action': 'pause',
                     'type': 'ad',
+                    'ad_id': ad['ad_id'],
                     'name': ad['ad_name'],
                     'ad_set': ad['ad_set_name'],
                     'reason': f'High CPA (${ad["cpa"]:.2f}) above threshold (${self.optimization_rules["pause_cpa_threshold"]:.2f})',
@@ -649,8 +686,10 @@ class FacebookOptimizationTool:
             elif (ad['ctr'] < self.optimization_rules['pause_ctr_threshold'] and 
                   ad['spend'] > self.optimization_rules['pause_ctr_spend_threshold']):
                 recommendations.append({
+                    'id': f"pause_{ad['ad_id']}_{len(recommendations)}",
                     'action': 'pause',
                     'type': 'ad',
+                    'ad_id': ad['ad_id'],
                     'name': ad['ad_name'],
                     'ad_set': ad['ad_set_name'],
                     'reason': f'Low CTR ({ad["ctr"]:.2f}%) below threshold ({self.optimization_rules["pause_ctr_threshold"]:.2f}%)',
@@ -667,8 +706,10 @@ class FacebookOptimizationTool:
             elif (ad['bookings'] == 0 and 
                   ad['spend'] > self.optimization_rules['pause_no_bookings_threshold']):
                 recommendations.append({
+                    'id': f"pause_{ad['ad_id']}_{len(recommendations)}",
                     'action': 'pause',
                     'type': 'ad',
+                    'ad_id': ad['ad_id'],
                     'name': ad['ad_name'],
                     'ad_set': ad['ad_set_name'],
                     'reason': f'No bookings with ${ad["spend"]:.2f} spend (threshold: ${self.optimization_rules["pause_no_bookings_threshold"]:.2f})',
@@ -685,8 +726,10 @@ class FacebookOptimizationTool:
             elif (ad['cpc'] > self.optimization_rules['pause_high_cpc_threshold'] and 
                   ad['spend'] > self.optimization_rules['pause_high_cpc_spend_threshold']):
                 recommendations.append({
+                    'id': f"pause_{ad['ad_id']}_{len(recommendations)}",
                     'action': 'pause',
                     'type': 'ad',
+                    'ad_id': ad['ad_id'],
                     'name': ad['ad_name'],
                     'ad_set': ad['ad_set_name'],
                     'reason': f'High CPC (${ad["cpc"]:.2f}) above threshold (${self.optimization_rules["pause_high_cpc_threshold"]:.2f})',
@@ -712,8 +755,10 @@ class FacebookOptimizationTool:
                 
                 if meets_criteria:
                     recommendations.append({
+                        'id': f"scale_{ad['ad_id']}_{len(recommendations)}",
                         'action': 'scale',
                         'type': 'ad',
+                        'ad_id': ad['ad_id'],
                         'name': ad['ad_name'],
                         'ad_set': ad['ad_set_name'],
                         'reason': f'High ROAS ({ad["roas"]:.2f}) above threshold ({self.optimization_rules["scale_roas_threshold"]:.2f}) and meets criteria',
@@ -731,8 +776,10 @@ class FacebookOptimizationTool:
                   ad['spend'] > self.optimization_rules['scale_min_spend_threshold'] and
                   ad['roas'] > 1.0):
                 recommendations.append({
+                    'id': f"scale_{ad['ad_id']}_{len(recommendations)}",
                     'action': 'scale',
                     'type': 'ad',
+                    'ad_id': ad['ad_id'],
                     'name': ad['ad_name'],
                     'ad_set': ad['ad_set_name'],
                     'reason': f'Exceptional CTR ({ad["ctr"]:.2f}%) above bonus threshold ({self.optimization_rules["scale_ctr_bonus_threshold"]:.2f}%)',
@@ -750,8 +797,10 @@ class FacebookOptimizationTool:
                   ad['spend'] > self.optimization_rules['scale_min_spend_threshold'] and
                   ad['roas'] > 1.0):
                 recommendations.append({
+                    'id': f"scale_{ad['ad_id']}_{len(recommendations)}",
                     'action': 'scale',
                     'type': 'ad',
+                    'ad_id': ad['ad_id'],
                     'name': ad['ad_name'],
                     'ad_set': ad['ad_set_name'],
                     'reason': f'Low CPA (${ad["cpa"]:.2f}) below bonus threshold (${self.optimization_rules["scale_cpa_bonus_threshold"]:.2f})',
@@ -769,8 +818,10 @@ class FacebookOptimizationTool:
                   ad['spend'] > self.optimization_rules['scale_min_spend_threshold'] and
                   ad['roas'] > 1.0):
                 recommendations.append({
+                    'id': f"scale_{ad['ad_id']}_{len(recommendations)}",
                     'action': 'scale',
                     'type': 'ad',
+                    'ad_id': ad['ad_id'],
                     'name': ad['ad_name'],
                     'ad_set': ad['ad_set_name'],
                     'reason': f'High booking conversion rate ({ad["booking_conversion_rate"]:.2f}%) above threshold ({self.optimization_rules["scale_booking_rate_threshold"]:.2f}%)',
@@ -788,6 +839,148 @@ class FacebookOptimizationTool:
         return sorted(recommendations, 
                      key=lambda x: (priority_order.get(x['priority'], 0), x['roas']), 
                      reverse=True)
+
+    def execute_optimization_actions(self, selected_recommendations):
+        """Execute selected optimization actions via Facebook API"""
+        results = []
+        
+        if not self.fb_access_token:
+            return [{'status': 'error', 'message': 'Facebook API access token not configured'}]
+        
+        for rec_id in selected_recommendations:
+            try:
+                # Find the recommendation
+                recommendations = self.get_optimization_recommendations()
+                recommendation = next((r for r in recommendations if r['id'] == rec_id), None)
+                
+                if not recommendation:
+                    results.append({
+                        'id': rec_id,
+                        'status': 'error',
+                        'message': 'Recommendation not found'
+                    })
+                    continue
+                
+                ad_id = recommendation['ad_id']
+                action = recommendation['action']
+                
+                # Execute the action via Facebook API
+                if action == 'pause':
+                    # Pause the ad
+                    url = f"https://graph.facebook.com/v18.0/{ad_id}"
+                    params = {
+                        'access_token': self.fb_access_token,
+                        'status': 'PAUSED'
+                    }
+                    
+                    response = requests.post(url, params=params, timeout=30)
+                    
+                    if response.status_code == 200:
+                        results.append({
+                            'id': rec_id,
+                            'status': 'success',
+                            'message': f'Successfully paused ad: {recommendation["name"]}',
+                            'action': 'pause',
+                            'ad_name': recommendation['name']
+                        })
+                    else:
+                        results.append({
+                            'id': rec_id,
+                            'status': 'error',
+                            'message': f'Failed to pause ad: {response.text}',
+                            'action': 'pause',
+                            'ad_name': recommendation['name']
+                        })
+                
+                elif action == 'scale':
+                    # For scaling, we'll increase the budget by 20%
+                    # First get the current adset budget
+                    adset_url = f"https://graph.facebook.com/v18.0/{ad_id}"
+                    adset_params = {
+                        'access_token': self.fb_access_token,
+                        'fields': 'adset{daily_budget,lifetime_budget}'
+                    }
+                    
+                    adset_response = requests.get(adset_url, params=adset_params, timeout=30)
+                    
+                    if adset_response.status_code == 200:
+                        adset_data = adset_response.json()
+                        adset_info = adset_data.get('adset', {})
+                        
+                        # Scale the budget (increase by 20%)
+                        daily_budget = adset_info.get('daily_budget')
+                        lifetime_budget = adset_info.get('lifetime_budget')
+                        
+                        if daily_budget:
+                            new_budget = int(float(daily_budget) * 1.2)
+                            budget_type = 'daily_budget'
+                        elif lifetime_budget:
+                            new_budget = int(float(lifetime_budget) * 1.2)
+                            budget_type = 'lifetime_budget'
+                        else:
+                            results.append({
+                                'id': rec_id,
+                                'status': 'error',
+                                'message': f'No budget found for ad set',
+                                'action': 'scale',
+                                'ad_name': recommendation['name']
+                            })
+                            continue
+                        
+                        # Update the adset budget
+                        adset_id = adset_info.get('id')
+                        if adset_id:
+                            update_url = f"https://graph.facebook.com/v18.0/{adset_id}"
+                            update_params = {
+                                'access_token': self.fb_access_token,
+                                budget_type: new_budget
+                            }
+                            
+                            update_response = requests.post(update_url, params=update_params, timeout=30)
+                            
+                            if update_response.status_code == 200:
+                                results.append({
+                                    'id': rec_id,
+                                    'status': 'success',
+                                    'message': f'Successfully scaled ad set budget by 20%: {recommendation["name"]}',
+                                    'action': 'scale',
+                                    'ad_name': recommendation['name']
+                                })
+                            else:
+                                results.append({
+                                    'id': rec_id,
+                                    'status': 'error',
+                                    'message': f'Failed to scale ad set budget: {update_response.text}',
+                                    'action': 'scale',
+                                    'ad_name': recommendation['name']
+                                })
+                        else:
+                            results.append({
+                                'id': rec_id,
+                                'status': 'error',
+                                'message': f'Ad set ID not found',
+                                'action': 'scale',
+                                'ad_name': recommendation['name']
+                            })
+                    else:
+                        results.append({
+                            'id': rec_id,
+                            'status': 'error',
+                            'message': f'Failed to get ad set info: {adset_response.text}',
+                            'action': 'scale',
+                            'ad_name': recommendation['name']
+                        })
+                
+            except Exception as e:
+                results.append({
+                    'id': rec_id,
+                    'status': 'error',
+                    'message': f'Exception occurred: {str(e)}',
+                    'action': recommendation.get('action', 'unknown'),
+                    'ad_name': recommendation.get('name', 'unknown')
+                })
+        
+        return results
 
     def generate_ai_insights(self, analysis_type):
         """Generate AI insights based on performance data"""
@@ -807,10 +1000,10 @@ class FacebookOptimizationTool:
             - Total Revenue: ${summary['total_revenue']:,.2f}
             - Total Impressions: {summary['total_impressions']:,.0f}
             - Total Clicks: {summary['total_clicks']:,.0f}
-            - Average CTR: {summary['avg_ctr']:.2f}%
+            - Overall CTR: {summary['overall_ctr']:.2f}%
             - Average CPC: ${summary['avg_cpc']:.2f}
             - Average CPM: ${summary['avg_cpm']:.2f}
-            - Average ROAS: {summary['avg_roas']:.2f}
+            - Overall ROAS: {summary['overall_roas']:.2f}
             - Average CPA: ${summary['avg_cpa']:.2f}
             - Successful Ads: {summary['successful_ads']}
             
@@ -865,9 +1058,9 @@ class FacebookOptimizationTool:
                 {performance_context}
                 
                 Focus on funnel performance:
-                - Average Funnel Start Rate: {sum(ad['funnel_start_rate'] for ad in self.performance_data) / len(self.performance_data):.1f}%
-                - Average Survey Completion Rate: {sum(ad['survey_completion_rate'] for ad in self.performance_data) / len(self.performance_data):.1f}%
-                - Average Booking Conversion Rate: {sum(ad['booking_conversion_rate'] for ad in self.performance_data) / len(self.performance_data):.1f}%
+                - Average Funnel Start Rate: {summary['avg_funnel_start_rate']:.1f}%
+                - Average Booking Rate: {summary['avg_booking_rate']:.1f}%
+                - Average Completion Rate: {summary['avg_completion_rate']*100:.1f}%
                 
                 Please provide:
                 1. Funnel bottleneck analysis
@@ -961,6 +1154,33 @@ def optimization_recommendations():
     recommendations = tool.get_optimization_recommendations()
     return jsonify(recommendations)
 
+@app.route('/api/execute-optimizations', methods=['POST'])
+def execute_optimizations():
+    try:
+        data = request.json
+        selected_recommendations = data.get('recommendations', [])
+        
+        if not selected_recommendations:
+            return jsonify({
+                'status': 'error',
+                'message': 'No recommendations selected'
+            })
+        
+        # Execute the optimizations
+        results = tool.execute_optimization_actions(selected_recommendations)
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Executed {len(selected_recommendations)} optimization actions',
+            'results': results
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Error executing optimizations: {str(e)}'
+        })
+
 @app.route('/api/ai-insights')
 def ai_insights():
     analysis_type = request.args.get('type', 'cluster')
@@ -987,9 +1207,10 @@ def creative_brief():
 
 ## Performance Context
 Based on analysis of {len(tool.performance_data)} ads with Facebook API integration:
-- Average CTR: {tool.get_performance_summary()['avg_ctr']:.2f}%
+- Overall CTR: {tool.get_performance_summary()['overall_ctr']:.2f}%
 - Average CPC: ${tool.get_performance_summary()['avg_cpc']:.2f}
 - Average CPM: ${tool.get_performance_summary()['avg_cpm']:.2f}
+- Overall ROAS: {tool.get_performance_summary()['overall_roas']:.2f}
 - Successful ads show consistent patterns in messaging and targeting
 
 ## Success Criteria (Current KPI Settings)
