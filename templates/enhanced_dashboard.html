@@ -92,7 +92,7 @@
 
         .metrics-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
             gap: 20px;
             margin-bottom: 30px;
         }
@@ -112,15 +112,17 @@
         }
 
         .metric-value {
-            font-size: 2rem;
+            font-size: 1.6rem;
             font-weight: 700;
             color: #1e293b;
             margin-bottom: 5px;
+            word-break: break-word;
+            line-height: 1.2;
         }
 
         .metric-label {
             color: #64748b;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             font-weight: 500;
         }
 
@@ -173,6 +175,12 @@
             background: white;
             color: #667eea;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .refresh-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
         }
 
         .table-container {
@@ -579,12 +587,12 @@
             }
 
             .metrics-grid {
-                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
                 gap: 15px;
             }
 
             .metric-value {
-                font-size: 1.5rem;
+                font-size: 1.3rem;
             }
 
             .dashboard-controls {
@@ -630,6 +638,10 @@
         <!-- Performance Summary Tab -->
         <div id="performance-summary" class="tab-content active">
             <h2 style="margin-bottom: 20px; color: #1e293b;">Performance Summary</h2>
+            <div class="refresh-controls" style="margin-bottom: 20px;">
+                <button class="btn btn-secondary" onclick="refreshData()">🔄 Refresh Data</button>
+                <span id="refresh-status" style="color: #64748b; font-weight: 600;"></span>
+            </div>
             <div class="metrics-grid" id="summary-metrics">
                 <!-- Metrics will be loaded here -->
             </div>
@@ -666,6 +678,7 @@
                             <th>CPM</th>
                             <th>Funnel Start %</th>
                             <th>Booking %</th>
+                            <th>Appointment Completion %</th>
                             <th>Bookings</th>
                             <th>CPA</th>
                             <th>ROAS</th>
@@ -692,6 +705,7 @@
                             <th>CPM</th>
                             <th>Funnel Start %</th>
                             <th>Booking %</th>
+                            <th>Appointment Completion %</th>
                             <th>Bookings</th>
                             <th>CPA</th>
                             <th>ROAS</th>
@@ -1001,6 +1015,46 @@
             }
         }
 
+        // Refresh data
+        async function refreshData() {
+            const statusSpan = document.getElementById('refresh-status');
+            statusSpan.textContent = 'Refreshing...';
+            
+            try {
+                const response = await fetch('/api/refresh-data');
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    statusSpan.textContent = '✅ Data refreshed successfully';
+                    // Reload current tab data
+                    const activeTab = document.querySelector('.tab.active');
+                    if (activeTab) {
+                        const tabName = activeTab.textContent.toLowerCase().replace(/\s+/g, '-');
+                        if (tabName.includes('performance-summary')) {
+                            loadPerformanceSummary();
+                        } else if (tabName.includes('performance-dashboard')) {
+                            loadPerformanceDashboard();
+                        } else if (tabName.includes('optimization')) {
+                            loadOptimizationRecommendations();
+                        }
+                    }
+                } else {
+                    statusSpan.textContent = '❌ Refresh failed';
+                }
+                
+                // Clear status after 5 seconds
+                setTimeout(() => {
+                    statusSpan.textContent = '';
+                }, 5000);
+                
+            } catch (error) {
+                statusSpan.textContent = '❌ Refresh error';
+                setTimeout(() => {
+                    statusSpan.textContent = '';
+                }, 5000);
+            }
+        }
+
         // Load performance summary
         async function loadPerformanceSummary() {
             try {
@@ -1014,11 +1068,11 @@
                         <div class="metric-label">Total Ads</div>
                     </div>
                     <div class="metric-card">
-                        <div class="metric-value">$${data.total_spend.toLocaleString()}</div>
+                        <div class="metric-value">$${data.total_spend.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
                         <div class="metric-label">Total Spend</div>
                     </div>
                     <div class="metric-card">
-                        <div class="metric-value">$${data.total_revenue.toLocaleString()}</div>
+                        <div class="metric-value">$${data.total_revenue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
                         <div class="metric-label">Total Revenue</div>
                     </div>
                     <div class="metric-card">
@@ -1030,11 +1084,11 @@
                         <div class="metric-label">Total Clicks</div>
                     </div>
                     <div class="metric-card">
-                        <div class="metric-value">${data.total_bookings}</div>
+                        <div class="metric-value">${data.total_bookings.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
                         <div class="metric-label">Total Bookings</div>
                     </div>
                     <div class="metric-card">
-                        <div class="metric-value">$${data.total_offer_spend.toLocaleString()}</div>
+                        <div class="metric-value">$${data.total_offer_spend.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
                         <div class="metric-label">Total Offer Spend</div>
                     </div>
                     <div class="metric-card">
@@ -1059,15 +1113,15 @@
                     </div>
                     <div class="metric-card">
                         <div class="metric-value">${(data.avg_completion_rate * 100).toFixed(1)}%</div>
-                        <div class="metric-label">Average Completion %</div>
+                        <div class="metric-label">Avg Completion %</div>
                     </div>
                     <div class="metric-card">
                         <div class="metric-value">${data.avg_funnel_start_rate.toFixed(1)}%</div>
-                        <div class="metric-label">Average Funnel Start %</div>
+                        <div class="metric-label">Avg Funnel Start %</div>
                     </div>
                     <div class="metric-card">
                         <div class="metric-value">${data.avg_booking_rate.toFixed(1)}%</div>
-                        <div class="metric-label">Average Booking %</div>
+                        <div class="metric-label">Avg Booking %</div>
                     </div>
                     <div class="metric-card">
                         <div class="metric-value">${data.roi.toFixed(1)}%</div>
@@ -1111,7 +1165,7 @@
                             ${ad.ad_name}
                         </td>
                         <td>${ad.ad_count}</td>
-                        <td>$${ad.spend.toLocaleString()}</td>
+                        <td>$${ad.spend.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                         <td>${ad.impressions.toLocaleString()}</td>
                         <td>${ad.clicks.toLocaleString()}</td>
                         <td class="${ad.success_criteria.ctr_good ? 'metric-good' : 'metric-bad'}">${ad.ctr.toFixed(2)}%</td>
@@ -1119,7 +1173,8 @@
                         <td class="${ad.success_criteria.cpm_good ? 'metric-good' : 'metric-bad'}">$${ad.cpm.toFixed(2)}</td>
                         <td class="${ad.success_criteria.funnel_start_good ? 'metric-good' : 'metric-bad'}">${ad.funnel_start_rate.toFixed(1)}%</td>
                         <td class="${ad.success_criteria.booking_conversion_good ? 'metric-good' : 'metric-bad'}">${ad.booking_conversion_rate.toFixed(1)}%</td>
-                        <td>${ad.bookings}</td>
+                        <td>${(ad.completion_rate * 100).toFixed(1)}%</td>
+                        <td>${ad.bookings.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                         <td class="${ad.success_criteria.cpa_good ? 'metric-good' : 'metric-bad'}">$${ad.cpa.toFixed(2)}</td>
                         <td class="${ad.success_criteria.roas_good ? 'metric-good' : 'metric-bad'}">${ad.roas.toFixed(2)}</td>
                     </tr>
@@ -1148,7 +1203,7 @@
                             <td class="sticky" style="padding-left: 30px; max-width: 200px; overflow: hidden; text-overflow: ellipsis;" title="${ad.ad_name}">
                                 ${ad.ad_name}
                             </td>
-                            <td>$${ad.spend.toLocaleString()}</td>
+                            <td>$${ad.spend.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                             <td>${ad.impressions.toLocaleString()}</td>
                             <td>${ad.clicks.toLocaleString()}</td>
                             <td class="${ad.success_criteria.ctr_good ? 'metric-good' : 'metric-bad'}">${ad.ctr.toFixed(2)}%</td>
@@ -1156,7 +1211,8 @@
                             <td class="${ad.success_criteria.cpm_good ? 'metric-good' : 'metric-bad'}">$${ad.cpm.toFixed(2)}</td>
                             <td class="${ad.success_criteria.funnel_start_good ? 'metric-good' : 'metric-bad'}">${ad.funnel_start_rate.toFixed(1)}%</td>
                             <td class="${ad.success_criteria.booking_conversion_good ? 'metric-good' : 'metric-bad'}">${ad.booking_conversion_rate.toFixed(1)}%</td>
-                            <td>${ad.bookings}</td>
+                            <td>${(ad.completion_rate * 100).toFixed(1)}%</td>
+                            <td>${ad.bookings.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                             <td class="${ad.success_criteria.cpa_good ? 'metric-good' : 'metric-bad'}">$${ad.cpa.toFixed(2)}</td>
                             <td class="${ad.success_criteria.roas_good ? 'metric-good' : 'metric-bad'}">${ad.roas.toFixed(2)}</td>
                         </tr>
@@ -1173,7 +1229,7 @@
                             <td class="sticky" style="max-width: 200px; overflow: hidden; text-overflow: ellipsis;" title="${adgroup.ad_set_name}">
                                 ${adgroup.ad_set_name}
                             </td>
-                            <td>$${adgroup.spend.toLocaleString()}</td>
+                            <td>$${adgroup.spend.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                             <td>${adgroup.impressions.toLocaleString()}</td>
                             <td>${adgroup.clicks.toLocaleString()}</td>
                             <td>${adgroup.ctr.toFixed(2)}%</td>
@@ -1181,7 +1237,8 @@
                             <td>$${adgroup.cpm.toFixed(2)}</td>
                             <td>${adgroup.funnel_start_rate.toFixed(1)}%</td>
                             <td>${adgroup.booking_conversion_rate.toFixed(1)}%</td>
-                            <td>${adgroup.bookings}</td>
+                            <td>${(adgroup.completion_rate * 100).toFixed(1)}%</td>
+                            <td>${adgroup.bookings.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                             <td>$${adgroup.cpa.toFixed(2)}</td>
                             <td>${adgroup.roas.toFixed(2)}</td>
                         </tr>
@@ -1244,7 +1301,7 @@
                             <div><strong>ROAS:</strong> ${rec.roas.toFixed(2)}</div>
                             <div><strong>CPA:</strong> $${rec.cpa.toFixed(2)}</div>
                             <div><strong>CTR:</strong> ${rec.ctr.toFixed(2)}%</div>
-                            <div><strong>Bookings:</strong> ${rec.bookings}</div>
+                            <div><strong>Bookings:</strong> ${rec.bookings.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
                         </div>
                     </div>
                 `).join('');
