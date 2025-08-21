@@ -9,6 +9,7 @@ import csv
 import io
 from datetime import datetime, timedelta
 import time
+from collections import defaultdict
 
 app = Flask(__name__)
 CORS(app)
@@ -203,14 +204,14 @@ class FacebookOptimizationTool:
             print(f"❌ Google Sheets loading error: {e}")
 
     def load_facebook_api_data(self):
-        """Load marketing metrics from Facebook API with pagination and error handling"""
+        """Load marketing metrics from Facebook API with expanded date range"""
         try:
             if not self.fb_access_token or not self.fb_ad_account_id:
                 print("⚠️ Facebook API credentials not available")
                 return
             
-            # Use shorter date range to reduce data volume
-            since_date = "2025-08-15"  # Start from August 15th (last 2 weeks)
+            # Use expanded date range but with better pagination
+            since_date = "2025-06-01"  # Back to June 1st as requested
             until_date = datetime.now().strftime("%Y-%m-%d")
             
             print(f"🔄 Loading Facebook API data from {since_date} to {until_date}")
@@ -218,7 +219,7 @@ class FacebookOptimizationTool:
             all_ads_data = []
             after_cursor = None
             page_count = 0
-            max_pages = 5  # Limit to prevent infinite loops and reduce data volume
+            max_pages = 20  # Increased to get more historical data
             
             while page_count < max_pages:
                 try:
@@ -227,12 +228,12 @@ class FacebookOptimizationTool:
                     
                     params = {
                         'access_token': self.fb_access_token,
-                        'fields': 'name,adset{name},insights{impressions,clicks,spend,cpm,cpc,ctr}',
+                        'fields': 'name,adset{name},insights{impressions,clicks,spend}',  # Minimal fields to reduce load
                         'time_range': json.dumps({
                             'since': since_date,
                             'until': until_date
                         }),
-                        'limit': 25,  # Smaller page size to reduce load
+                        'limit': 20,  # Smaller page size
                         'level': 'ad'
                     }
                     
@@ -266,27 +267,13 @@ class FacebookOptimizationTool:
                         page_count += 1
                         
                         # Add delay to respect rate limits
-                        time.sleep(1)
+                        time.sleep(0.5)
                         
                     elif response.status_code == 400:
                         error_data = response.json()
                         error_message = error_data.get('error', {}).get('message', 'Unknown error')
-                        
-                        if 'reduce the amount of data' in error_message.lower():
-                            print("⚠️ Facebook API data limit reached, trying with minimal fields...")
-                            # Try with minimal fields only
-                            params['fields'] = 'name,adset{name},insights{impressions,clicks}'
-                            params['limit'] = 10
-                            
-                            response = requests.get(url, params=params, timeout=30)
-                            if response.status_code == 200:
-                                data = response.json()
-                                all_ads_data.extend(data.get('data', []))
-                                print(f"✅ Loaded {len(data.get('data', []))} ads with minimal fields")
-                            break
-                        else:
-                            print(f"❌ Facebook API error: {response.status_code} - {error_message}")
-                            break
+                        print(f"❌ Facebook API error: {response.status_code} - {error_message}")
+                        break
                     
                     else:
                         print(f"❌ Facebook API error: {response.status_code} - {response.text}")
@@ -343,17 +330,6 @@ class FacebookOptimizationTool:
             
             self.fb_api_data = fb_api_records
             print(f"✅ Processed {len(fb_api_records)} ads from Facebook API")
-            
-            # Debug: Show sample data for the specific ad set
-            for record in fb_api_records[:5]:  # Show first 5 records
-                if '071425_CEO_AppointmentPage_Calgary_Amazon_130_EngagedShoppers_Video_Feed-Stories-Reels_EXP-InsuranceLP' in record.get('adset_name', ''):
-                    print(f"📊 Found target ad set: {record['adset_name']}")
-                    print(f"   - Impressions: {record['impressions']:,.0f}")
-                    print(f"   - Clicks: {record['clicks']:,.0f}")
-                    print(f"   - CTR: {record['ctr']:.2f}%")
-                    print(f"   - CPC: ${record['cpc']:.2f}")
-                    print(f"   - CPM: ${record['cpm']:.2f}")
-                    break
                 
         except Exception as e:
             print(f"❌ Facebook API loading error: {e}")
@@ -590,23 +566,157 @@ class FacebookOptimizationTool:
             self.performance_data = combined_data
             print(f"✅ Processed {processed_count} combined records from {len(self.fb_api_data)} FB API records")
             
-            # Debug: Show specific ad set data
-            for ad in combined_data:
-                if '071425_CEO_AppointmentPage_Calgary_Amazon_130_EngagedShoppers_Video_Feed-Stories-Reels_EXP-InsuranceLP' in ad['ad_set_name']:
-                    print(f"📊 Processed target ad set: {ad['ad_set_name']}")
-                    print(f"   - Final CTR: {ad['ctr']:.2f}%")
-                    print(f"   - Final Impressions: {ad['impressions']:,.0f}")
-                    print(f"   - Final Clicks: {ad['clicks']:,.0f}")
-                    print(f"   - Final CPC: ${ad['cpc']:.2f}")
-                    print(f"   - Final CPM: ${ad['cpm']:.2f}")
-                    print(f"   - Success Criteria: {ad['success_criteria']}")
-                    break
-            
             if processed_count == 0:
                 print("⚠️ No records were successfully combined - check data format...")
                 
         except Exception as e:
             print(f"❌ Data processing error: {e}")
+
+    def get_creative_dashboard_data(self):
+        """Get ad-level grouped data for Creative Dashboard"""
+        try:
+            # Group by ad name only
+            ad_groups = defaultdict(list)
+            
+            for ad in self.performance_data:
+                ad_name = ad['ad_name']
+                ad_groups[ad_name].append(ad)
+            
+            # Aggregate data for each ad name
+            creative_data = []
+            for ad_name, ads in ad_groups.items():
+                # Aggregate metrics
+                total_spend = sum(ad['spend'] for ad in ads)
+                total_impressions = sum(ad['impressions'] for ad in ads)
+                total_clicks = sum(ad['clicks'] for ad in ads)
+                total_bookings = sum(ad['bookings'] for ad in ads)
+                total_revenue = sum(ad['revenue'] for ad in ads)
+                total_promo_spend = sum(ad['promo_spend'] for ad in ads)
+                total_site_visits = sum(ad['site_visits'] for ad in ads)
+                total_funnel_starts = sum(ad['funnel_starts'] for ad in ads)
+                
+                # Calculate aggregated metrics
+                ctr = (total_clicks / total_impressions * 100) if total_impressions > 0 else 0
+                cpc = total_spend / total_clicks if total_clicks > 0 else 0
+                cpm = total_spend / total_impressions * 1000 if total_impressions > 0 else 0
+                cpa = total_spend / total_bookings if total_bookings > 0 else 0
+                funnel_start_rate = (total_funnel_starts / total_site_visits * 100) if total_site_visits > 0 else 0
+                booking_conversion_rate = (total_bookings / total_site_visits * 100) if total_site_visits > 0 else 0
+                
+                # Calculate ROAS
+                total_cost = total_spend + total_promo_spend
+                avg_completion_rate = sum(ad['completion_rate'] for ad in ads) / len(ads)
+                effective_bookings = total_bookings * avg_completion_rate
+                cac = total_cost / effective_bookings if effective_bookings > 0 else 0
+                ltv = total_revenue / effective_bookings if effective_bookings > 0 else 0
+                roas = ltv / cac if cac > 0 else 0
+                
+                # Success criteria using dynamic KPI settings
+                success_criteria = {
+                    'ctr_good': ctr > self.kpi_settings['ctr_threshold'],
+                    'funnel_start_good': funnel_start_rate > self.kpi_settings['funnel_start_threshold'],
+                    'cpa_good': cpa < self.kpi_settings['cpa_threshold'] and cpa > 0,
+                    'clicks_good': total_clicks > self.kpi_settings['clicks_threshold'],
+                    'roas_good': roas > self.kpi_settings['roas_threshold'],
+                    'cpc_good': cpc < self.kpi_settings['cpc_threshold'] and cpc > 0,
+                    'cpm_good': cpm < self.kpi_settings['cpm_threshold'] and cpm > 0,
+                    'booking_conversion_good': booking_conversion_rate > self.kpi_settings['booking_conversion_threshold']
+                }
+                
+                creative_data.append({
+                    'ad_name': ad_name,
+                    'ad_count': len(ads),
+                    'spend': total_spend,
+                    'clicks': total_clicks,
+                    'impressions': total_impressions,
+                    'ctr': ctr,
+                    'cpc': cpc,
+                    'cpm': cpm,
+                    'funnel_start_rate': funnel_start_rate,
+                    'booking_conversion_rate': booking_conversion_rate,
+                    'bookings': total_bookings,
+                    'cpa': cpa,
+                    'roas': roas,
+                    'completion_rate': avg_completion_rate,
+                    'success_criteria': success_criteria,
+                    'criteria_met_count': sum(1 for v in success_criteria.values() if v),
+                    'all_criteria_met': all(success_criteria.values())
+                })
+            
+            return sorted(creative_data, key=lambda x: x['spend'], reverse=True)
+            
+        except Exception as e:
+            print(f"❌ Error creating creative dashboard data: {e}")
+            return []
+
+    def get_ad_group_dashboard_data(self):
+        """Get ad set level grouped data with nested ads for Ad Group Dashboard"""
+        try:
+            # Group by ad set name
+            adset_groups = defaultdict(list)
+            
+            for ad in self.performance_data:
+                ad_set_name = ad['ad_set_name']
+                adset_groups[ad_set_name].append(ad)
+            
+            # Create nested structure
+            adgroup_data = []
+            for ad_set_name, ads in adset_groups.items():
+                # Calculate ad set level aggregates
+                total_spend = sum(ad['spend'] for ad in ads)
+                total_impressions = sum(ad['impressions'] for ad in ads)
+                total_clicks = sum(ad['clicks'] for ad in ads)
+                total_bookings = sum(ad['bookings'] for ad in ads)
+                total_revenue = sum(ad['revenue'] for ad in ads)
+                total_promo_spend = sum(ad['promo_spend'] for ad in ads)
+                total_site_visits = sum(ad['site_visits'] for ad in ads)
+                total_funnel_starts = sum(ad['funnel_starts'] for ad in ads)
+                
+                # Calculate aggregated metrics
+                ctr = (total_clicks / total_impressions * 100) if total_impressions > 0 else 0
+                cpc = total_spend / total_clicks if total_clicks > 0 else 0
+                cpm = total_spend / total_impressions * 1000 if total_impressions > 0 else 0
+                cpa = total_spend / total_bookings if total_bookings > 0 else 0
+                funnel_start_rate = (total_funnel_starts / total_site_visits * 100) if total_site_visits > 0 else 0
+                booking_conversion_rate = (total_bookings / total_site_visits * 100) if total_site_visits > 0 else 0
+                
+                # Calculate ROAS
+                total_cost = total_spend + total_promo_spend
+                avg_completion_rate = sum(ad['completion_rate'] for ad in ads) / len(ads)
+                effective_bookings = total_bookings * avg_completion_rate
+                cac = total_cost / effective_bookings if effective_bookings > 0 else 0
+                ltv = total_revenue / effective_bookings if effective_bookings > 0 else 0
+                roas = ltv / cac if cac > 0 else 0
+                
+                # Count successful ads
+                successful_ads = len([ad for ad in ads if ad['all_criteria_met']])
+                total_ads = len(ads)
+                
+                adgroup_data.append({
+                    'ad_set_name': ad_set_name,
+                    'total_ads': total_ads,
+                    'successful_ads': successful_ads,
+                    'success_ratio': f"{successful_ads}/{total_ads}",
+                    'spend': total_spend,
+                    'clicks': total_clicks,
+                    'impressions': total_impressions,
+                    'ctr': ctr,
+                    'cpc': cpc,
+                    'cpm': cpm,
+                    'funnel_start_rate': funnel_start_rate,
+                    'booking_conversion_rate': booking_conversion_rate,
+                    'bookings': total_bookings,
+                    'cpa': cpa,
+                    'roas': roas,
+                    'completion_rate': avg_completion_rate,
+                    'ads': sorted(ads, key=lambda x: x['spend'], reverse=True)  # Nested ads sorted by spend
+                })
+            
+            return sorted(adgroup_data, key=lambda x: x['spend'], reverse=True)
+            
+        except Exception as e:
+            print(f"❌ Error creating ad group dashboard data: {e}")
+            return []
 
     def get_performance_summary(self):
         """Get performance summary statistics with corrected calculations"""
@@ -740,66 +850,6 @@ class FacebookOptimizationTool:
                     'rule': 'high_cpa'
                 })
             
-            # Rule 3: Low CTR with spend
-            elif (ad['ctr'] < self.optimization_rules['pause_ctr_threshold'] and 
-                  ad['spend'] > self.optimization_rules['pause_ctr_spend_threshold']):
-                recommendations.append({
-                    'id': f"pause_{ad['ad_id']}_{len(recommendations)}",
-                    'action': 'pause',
-                    'type': 'ad',
-                    'ad_id': ad['ad_id'],
-                    'name': ad['ad_name'],
-                    'ad_set': ad['ad_set_name'],
-                    'reason': f'Low CTR ({ad["ctr"]:.2f}%) below threshold ({self.optimization_rules["pause_ctr_threshold"]:.2f}%)',
-                    'spend': ad['spend'],
-                    'roas': ad['roas'],
-                    'cpa': ad['cpa'],
-                    'ctr': ad['ctr'],
-                    'bookings': ad['bookings'],
-                    'priority': priority,
-                    'rule': 'low_ctr'
-                })
-            
-            # Rule 4: No bookings with significant spend
-            elif (ad['bookings'] == 0 and 
-                  ad['spend'] > self.optimization_rules['pause_no_bookings_threshold']):
-                recommendations.append({
-                    'id': f"pause_{ad['ad_id']}_{len(recommendations)}",
-                    'action': 'pause',
-                    'type': 'ad',
-                    'ad_id': ad['ad_id'],
-                    'name': ad['ad_name'],
-                    'ad_set': ad['ad_set_name'],
-                    'reason': f'No bookings with ${ad["spend"]:.2f} spend (threshold: ${self.optimization_rules["pause_no_bookings_threshold"]:.2f})',
-                    'spend': ad['spend'],
-                    'roas': ad['roas'],
-                    'cpa': ad['cpa'],
-                    'ctr': ad['ctr'],
-                    'bookings': ad['bookings'],
-                    'priority': priority,
-                    'rule': 'no_bookings'
-                })
-            
-            # Rule 5: High CPC
-            elif (ad['cpc'] > self.optimization_rules['pause_high_cpc_threshold'] and 
-                  ad['spend'] > self.optimization_rules['pause_high_cpc_spend_threshold']):
-                recommendations.append({
-                    'id': f"pause_{ad['ad_id']}_{len(recommendations)}",
-                    'action': 'pause',
-                    'type': 'ad',
-                    'ad_id': ad['ad_id'],
-                    'name': ad['ad_name'],
-                    'ad_set': ad['ad_set_name'],
-                    'reason': f'High CPC (${ad["cpc"]:.2f}) above threshold (${self.optimization_rules["pause_high_cpc_threshold"]:.2f})',
-                    'spend': ad['spend'],
-                    'roas': ad['roas'],
-                    'cpa': ad['cpa'],
-                    'ctr': ad['ctr'],
-                    'bookings': ad['bookings'],
-                    'priority': priority,
-                    'rule': 'high_cpc'
-                })
-            
             # SCALE RULES
             
             # Rule 1: High ROAS and meets criteria
@@ -828,69 +878,6 @@ class FacebookOptimizationTool:
                         'priority': 'high',
                         'rule': 'high_roas_meets_criteria'
                     })
-            
-            # Rule 2: Exceptional CTR bonus
-            elif (ad['ctr'] > self.optimization_rules['scale_ctr_bonus_threshold'] and 
-                  ad['spend'] > self.optimization_rules['scale_min_spend_threshold'] and
-                  ad['roas'] > 1.0):
-                recommendations.append({
-                    'id': f"scale_{ad['ad_id']}_{len(recommendations)}",
-                    'action': 'scale',
-                    'type': 'ad',
-                    'ad_id': ad['ad_id'],
-                    'name': ad['ad_name'],
-                    'ad_set': ad['ad_set_name'],
-                    'reason': f'Exceptional CTR ({ad["ctr"]:.2f}%) above bonus threshold ({self.optimization_rules["scale_ctr_bonus_threshold"]:.2f}%)',
-                    'spend': ad['spend'],
-                    'roas': ad['roas'],
-                    'cpa': ad['cpa'],
-                    'ctr': ad['ctr'],
-                    'bookings': ad['bookings'],
-                    'priority': 'high',
-                    'rule': 'exceptional_ctr'
-                })
-            
-            # Rule 3: Low CPA bonus
-            elif (ad['cpa'] > 0 and ad['cpa'] < self.optimization_rules['scale_cpa_bonus_threshold'] and 
-                  ad['spend'] > self.optimization_rules['scale_min_spend_threshold'] and
-                  ad['roas'] > 1.0):
-                recommendations.append({
-                    'id': f"scale_{ad['ad_id']}_{len(recommendations)}",
-                    'action': 'scale',
-                    'type': 'ad',
-                    'ad_id': ad['ad_id'],
-                    'name': ad['ad_name'],
-                    'ad_set': ad['ad_set_name'],
-                    'reason': f'Low CPA (${ad["cpa"]:.2f}) below bonus threshold (${self.optimization_rules["scale_cpa_bonus_threshold"]:.2f})',
-                    'spend': ad['spend'],
-                    'roas': ad['roas'],
-                    'cpa': ad['cpa'],
-                    'ctr': ad['ctr'],
-                    'bookings': ad['bookings'],
-                    'priority': 'high',
-                    'rule': 'low_cpa_bonus'
-                })
-            
-            # Rule 4: High booking conversion rate
-            elif (ad['booking_conversion_rate'] > self.optimization_rules['scale_booking_rate_threshold'] and 
-                  ad['spend'] > self.optimization_rules['scale_min_spend_threshold'] and
-                  ad['roas'] > 1.0):
-                recommendations.append({
-                    'id': f"scale_{ad['ad_id']}_{len(recommendations)}",
-                    'action': 'scale',
-                    'type': 'ad',
-                    'ad_id': ad['ad_id'],
-                    'name': ad['ad_name'],
-                    'ad_set': ad['ad_set_name'],
-                    'reason': f'High booking conversion rate ({ad["booking_conversion_rate"]:.2f}%) above threshold ({self.optimization_rules["scale_booking_rate_threshold"]:.2f}%)',
-                    'spend': ad['spend'],
-                    'roas': ad['roas'],
-                    'cpa': ad['cpa'],
-                    'ctr': ad['ctr'],
-                    'bookings': ad['bookings'],
-                    'priority': 'medium',
-                    'rule': 'high_booking_rate'
-                })
         
         # Sort by priority and ROAS
         priority_order = {'high': 3, 'medium': 2, 'low': 1}
@@ -1206,6 +1193,53 @@ def performance_data():
         ]
     
     return jsonify(filtered_data)
+
+@app.route('/api/creative-dashboard')
+def creative_dashboard():
+    # Get filter parameter
+    search_filter = request.args.get('filter', '').lower()
+    
+    # Get creative dashboard data
+    creative_data = tool.get_creative_dashboard_data()
+    
+    # Filter data if search term provided
+    if search_filter:
+        creative_data = [
+            ad for ad in creative_data 
+            if search_filter in ad['ad_name'].lower()
+        ]
+    
+    return jsonify(creative_data)
+
+@app.route('/api/ad-group-dashboard')
+def ad_group_dashboard():
+    # Get filter parameter
+    search_filter = request.args.get('filter', '').lower()
+    
+    # Get ad group dashboard data
+    adgroup_data = tool.get_ad_group_dashboard_data()
+    
+    # Filter data if search term provided
+    if search_filter:
+        filtered_data = []
+        for adgroup in adgroup_data:
+            # Check if ad set name matches
+            if search_filter in adgroup['ad_set_name'].lower():
+                filtered_data.append(adgroup)
+            else:
+                # Check if any nested ad matches
+                matching_ads = [
+                    ad for ad in adgroup['ads']
+                    if search_filter in ad['ad_name'].lower() or search_filter in ad['ad_set_name'].lower()
+                ]
+                if matching_ads:
+                    # Create a copy with only matching ads
+                    filtered_adgroup = adgroup.copy()
+                    filtered_adgroup['ads'] = matching_ads
+                    filtered_data.append(filtered_adgroup)
+        adgroup_data = filtered_data
+    
+    return jsonify(adgroup_data)
 
 @app.route('/api/optimization-recommendations')
 def optimization_recommendations():
