@@ -8,6 +8,7 @@ import schedule
 import time
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
+import requests
 import io
 import base64
 
@@ -17,6 +18,7 @@ CORS(app)
 class FacebookOptimizationTool:
     def __init__(self):
         self.openai_client = None  # Initialize as None first
+        self.openai_api_key = None
         self.gc = None
         self.setup_apis()
         self.load_data()
@@ -25,27 +27,13 @@ class FacebookOptimizationTool:
     def setup_apis(self):
         """Initialize API clients"""
         try:
-            # OpenAI API (simplified initialization)
+            # OpenAI API (using direct HTTP requests to avoid client issues)
             api_key = os.getenv('OPENAI_API_KEY')
             if api_key and api_key.startswith('sk-'):
-                try:
-                    from openai import OpenAI
-                    # Simple initialization without extra parameters
-                    self.openai_client = OpenAI(api_key=api_key)
-                    print("✅ OpenAI API client initialized")
-                except ImportError:
-                    print("❌ OpenAI package not found")
-                    self.openai_client = None
-                except Exception as e:
-                    print(f"❌ OpenAI client error: {e}")
-                    # Try alternative initialization
-                    try:
-                        self.openai_client = OpenAI()  # Use environment variable directly
-                        print("✅ OpenAI API client initialized (alternative method)")
-                    except:
-                        self.openai_client = None
+                self.openai_api_key = api_key
+                print("✅ OpenAI API key configured")
             else:
-                self.openai_client = None
+                self.openai_api_key = None
                 print("⚠️ OpenAI API key not found or invalid format")
             
             # Google Sheets API
@@ -89,6 +77,42 @@ class FacebookOptimizationTool:
         except Exception as e:
             print(f"❌ Google Sheets setup error: {e}")
             self.gc = None
+    
+    def call_openai_api(self, messages, max_tokens=1000, temperature=0.7):
+        """Direct OpenAI API call using requests"""
+        if not self.openai_api_key:
+            return None
+            
+        try:
+            headers = {
+                'Authorization': f'Bearer {self.openai_api_key}',
+                'Content-Type': 'application/json'
+            }
+            
+            data = {
+                'model': 'gpt-3.5-turbo',
+                'messages': messages,
+                'max_tokens': max_tokens,
+                'temperature': temperature
+            }
+            
+            response = requests.post(
+                'https://api.openai.com/v1/chat/completions',
+                headers=headers,
+                json=data,
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                return result['choices'][0]['message']['content']
+            else:
+                print(f"OpenAI API error: {response.status_code} - {response.text}")
+                return None
+                
+        except Exception as e:
+            print(f"OpenAI API call error: {e}")
+            return None
     
     def load_data(self):
         """Load and process data from all sources"""
@@ -188,14 +212,12 @@ class FacebookOptimizationTool:
     def test_openai_connection(self):
         """Test OpenAI connection"""
         try:
-            if self.openai_client:
-                # Simple test call
-                response = self.openai_client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[{"role": "user", "content": "Hello, this is a test."}],
+            if self.openai_api_key:
+                result = self.call_openai_api(
+                    [{"role": "user", "content": "Hello, this is a test."}],
                     max_tokens=10
                 )
-                return True
+                return result is not None
             return False
         except Exception as e:
             print(f"OpenAI test failed: {e}")
@@ -204,13 +226,9 @@ class FacebookOptimizationTool:
     def generate_ai_insights(self, insight_type='cluster'):
         """Generate AI-powered insights using OpenAI"""
         try:
-            # Check if OpenAI client is available and working
-            if not self.openai_client:
+            # Check if OpenAI API key is available
+            if not self.openai_api_key:
                 return "OpenAI API not configured. Please add your OPENAI_API_KEY environment variable and restart the application."
-            
-            # Test connection first
-            if not self.test_openai_connection():
-                return "OpenAI API connection failed. Please check your API key and try again."
             
             if insight_type == 'cluster':
                 prompt = f"""
@@ -246,14 +264,12 @@ class FacebookOptimizationTool:
                 4. Seasonal campaign ideas
                 """
             
-            response = self.openai_client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=1000,
-                temperature=0.7
-            )
+            result = self.call_openai_api([{"role": "user", "content": prompt}])
             
-            return response.choices[0].message.content
+            if result:
+                return result
+            else:
+                return "Unable to generate AI insights at this time. Please check your OpenAI API key and try again."
             
         except Exception as e:
             return f"Error generating AI insights: {e}"
@@ -261,24 +277,14 @@ class FacebookOptimizationTool:
     def generate_creative_brief(self, campaign_name, campaign_type):
         """Generate AI-enhanced creative brief"""
         try:
-            # Check if OpenAI client is available
-            if not self.openai_client:
+            # Check if OpenAI API key is available
+            if not self.openai_api_key:
                 return {
                     'campaign_name': campaign_name,
                     'campaign_type': campaign_type,
                     'generated_at': datetime.now().isoformat(),
                     'error': 'OpenAI API not configured',
                     'ai_content': 'Please add your OPENAI_API_KEY environment variable and restart the application to enable AI features.'
-                }
-            
-            # Test connection first
-            if not self.test_openai_connection():
-                return {
-                    'campaign_name': campaign_name,
-                    'campaign_type': campaign_type,
-                    'generated_at': datetime.now().isoformat(),
-                    'error': 'OpenAI API connection failed',
-                    'ai_content': 'OpenAI API connection failed. Please check your API key and try again.'
                 }
             
             # Get performance insights
@@ -305,25 +311,29 @@ class FacebookOptimizationTool:
             Make it actionable and specific to Facebook advertising.
             """
             
-            response = self.openai_client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=1500,
-                temperature=0.7
-            )
+            result = self.call_openai_api([{"role": "user", "content": prompt}], max_tokens=1500)
             
-            return {
-                'campaign_name': campaign_name,
-                'campaign_type': campaign_type,
-                'generated_at': datetime.now().isoformat(),
-                'data_freshness': self.last_refresh.isoformat() if self.last_refresh else None,
-                'ai_content': response.choices[0].message.content,
-                'performance_context': {
-                    'top_roas': float(top_performers['roas'].max()),
-                    'best_ctr': float(top_performers['ctr'].max()),
-                    'best_cpc': float(top_performers['cpc'].min())
+            if result:
+                return {
+                    'campaign_name': campaign_name,
+                    'campaign_type': campaign_type,
+                    'generated_at': datetime.now().isoformat(),
+                    'data_freshness': self.last_refresh.isoformat() if self.last_refresh else None,
+                    'ai_content': result,
+                    'performance_context': {
+                        'top_roas': float(top_performers['roas'].max()),
+                        'best_ctr': float(top_performers['ctr'].max()),
+                        'best_cpc': float(top_performers['cpc'].min())
+                    }
                 }
-            }
+            else:
+                return {
+                    'campaign_name': campaign_name,
+                    'campaign_type': campaign_type,
+                    'generated_at': datetime.now().isoformat(),
+                    'error': 'OpenAI API call failed',
+                    'ai_content': 'Unable to generate AI content at this time. Please check your OpenAI API key.'
+                }
             
         except Exception as e:
             return {
@@ -486,7 +496,7 @@ def toggle_automation():
 def test_openai():
     """Test OpenAI connection"""
     try:
-        if tool.openai_client:
+        if tool.openai_api_key:
             success = tool.test_openai_connection()
             return jsonify({
                 'status': 'success' if success else 'failed',
@@ -495,7 +505,7 @@ def test_openai():
         else:
             return jsonify({
                 'status': 'failed',
-                'message': 'OpenAI client not initialized'
+                'message': 'OpenAI API key not configured'
             })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -504,3 +514,4 @@ if __name__ == '__main__':
     # Get port from environment variable (Railway sets this)
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
