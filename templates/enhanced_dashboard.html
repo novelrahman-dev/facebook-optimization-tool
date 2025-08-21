@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Facebook Optimization Tool</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <title>Facebook Optimization Dashboard</title>
     <style>
         * {
             margin: 0;
@@ -14,28 +13,31 @@
         
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #f8fafc;
-            color: #334155;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
         }
         
         .container {
             max-width: 1400px;
             margin: 0 auto;
-            padding: 20px;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
         }
         
         .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
             color: white;
             padding: 30px;
-            border-radius: 12px;
-            margin-bottom: 30px;
             text-align: center;
         }
         
         .header h1 {
             font-size: 2.5rem;
             margin-bottom: 10px;
+            font-weight: 700;
         }
         
         .header p {
@@ -45,234 +47,323 @@
         
         .tabs {
             display: flex;
-            background: white;
-            border-radius: 12px;
-            padding: 8px;
-            margin-bottom: 30px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+            overflow-x: auto;
         }
         
         .tab {
-            flex: 1;
-            padding: 12px 20px;
-            text-align: center;
-            background: transparent;
-            border: none;
-            border-radius: 8px;
+            padding: 15px 25px;
             cursor: pointer;
+            border: none;
+            background: none;
+            font-size: 1rem;
             font-weight: 500;
+            color: #6c757d;
             transition: all 0.3s ease;
+            white-space: nowrap;
         }
         
         .tab.active {
-            background: #667eea;
-            color: white;
+            color: #1e3c72;
+            border-bottom: 3px solid #1e3c72;
+            background: white;
         }
         
-        .tab:hover:not(.active) {
-            background: #f1f5f9;
+        .tab:hover {
+            color: #1e3c72;
+            background: rgba(30, 60, 114, 0.05);
         }
         
         .tab-content {
             display: none;
+            padding: 30px;
+            animation: fadeIn 0.3s ease;
         }
         
         .tab-content.active {
             display: block;
         }
         
-        .stats-grid {
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .summary-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
             gap: 20px;
             margin-bottom: 30px;
         }
         
-        .stat-card {
-            background: white;
+        .summary-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
             padding: 25px;
             border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
             text-align: center;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
         }
         
-        .stat-value {
+        .summary-card h3 {
+            font-size: 0.9rem;
+            margin-bottom: 10px;
+            opacity: 0.9;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .summary-card .value {
             font-size: 2rem;
-            font-weight: bold;
-            color: #667eea;
+            font-weight: 700;
             margin-bottom: 5px;
         }
         
-        .stat-label {
-            color: #64748b;
-            font-size: 0.9rem;
+        .search-container {
+            margin-bottom: 20px;
+            position: relative;
         }
         
-        .card {
+        .search-input {
+            width: 100%;
+            padding: 12px 45px 12px 15px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.3s ease;
+        }
+        
+        .search-input:focus {
+            outline: none;
+            border-color: #1e3c72;
+            box-shadow: 0 0 0 3px rgba(30, 60, 114, 0.1);
+        }
+        
+        .search-icon {
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #6c757d;
+        }
+        
+        .table-container {
             background: white;
             border-radius: 12px;
-            padding: 30px;
-            margin-bottom: 30px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            position: relative;
+            max-height: 600px;
+            overflow-x: auto;
+            overflow-y: auto;
         }
         
-        .card h3 {
-            margin-bottom: 20px;
-            color: #1e293b;
-            font-size: 1.5rem;
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 1400px;
+        }
+        
+        .table th {
+            background: #f8f9fa;
+            padding: 15px 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #495057;
+            border-bottom: 2px solid #dee2e6;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        
+        .table td {
+            padding: 12px;
+            border-bottom: 1px solid #f1f3f4;
+            font-size: 0.9rem;
+            white-space: nowrap;
+        }
+        
+        .table tbody tr:hover {
+            background: #f8f9fa;
+        }
+        
+        /* Sticky columns for Ad Set Name and Ad Name */
+        .table th:nth-child(2),
+        .table th:nth-child(3),
+        .table td:nth-child(2),
+        .table td:nth-child(3) {
+            position: sticky;
+            background: white;
+            z-index: 5;
+        }
+        
+        .table th:nth-child(2),
+        .table td:nth-child(2) {
+            left: 60px; /* After status column */
+        }
+        
+        .table th:nth-child(3),
+        .table td:nth-child(3) {
+            left: 260px; /* After status + ad set name columns */
+        }
+        
+        .table th:nth-child(2),
+        .table th:nth-child(3) {
+            background: #f8f9fa;
+        }
+        
+        .table tbody tr:hover td:nth-child(2),
+        .table tbody tr:hover td:nth-child(3) {
+            background: #f8f9fa;
+        }
+        
+        /* Column widths */
+        .table th:nth-child(1),
+        .table td:nth-child(1) { width: 60px; } /* Status */
+        .table th:nth-child(2),
+        .table td:nth-child(2) { width: 200px; max-width: 200px; } /* Ad Set Name */
+        .table th:nth-child(3),
+        .table td:nth-child(3) { width: 200px; max-width: 200px; } /* Ad Name */
+        
+        .table td:nth-child(2),
+        .table td:nth-child(3) {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .metric {
+            font-weight: 600;
+        }
+        
+        .metric.good {
+            color: #28a745;
+        }
+        
+        .metric.bad {
+            color: #dc3545;
+        }
+        
+        .success-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .success-indicator.success {
+            background: #28a745;
+        }
+        
+        .success-indicator.warning {
+            background: #ffc107;
+        }
+        
+        .success-indicator.danger {
+            background: #dc3545;
         }
         
         .btn {
-            background: #667eea;
-            color: white;
+            padding: 10px 20px;
             border: none;
-            padding: 12px 24px;
-            border-radius: 8px;
+            border-radius: 6px;
             cursor: pointer;
             font-weight: 500;
+            text-decoration: none;
+            display: inline-block;
             transition: all 0.3s ease;
-            margin-right: 10px;
-            margin-bottom: 10px;
+            font-size: 0.9rem;
         }
         
-        .btn:hover {
-            background: #5a67d8;
+        .btn-primary {
+            background: #1e3c72;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #2a5298;
             transform: translateY(-1px);
         }
         
-        .btn-secondary {
-            background: #64748b;
-        }
-        
-        .btn-secondary:hover {
-            background: #475569;
-        }
-        
         .btn-success {
-            background: #10b981;
+            background: #28a745;
+            color: white;
         }
         
         .btn-success:hover {
-            background: #059669;
+            background: #218838;
         }
         
         .btn-danger {
-            background: #ef4444;
+            background: #dc3545;
+            color: white;
         }
         
         .btn-danger:hover {
-            background: #dc2626;
+            background: #c82333;
         }
         
-        .toggle-group {
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+        
+        .loading::after {
+            content: '';
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #1e3c72;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .insights-container {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 12px;
+            margin-top: 20px;
+        }
+        
+        .insights-content {
+            white-space: pre-wrap;
+            line-height: 1.6;
+            color: #495057;
+        }
+        
+        .insights-buttons {
             display: flex;
             gap: 10px;
             margin-bottom: 20px;
             flex-wrap: wrap;
         }
         
-        .toggle-btn {
-            background: #f1f5f9;
-            color: #64748b;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 500;
-            transition: all 0.3s ease;
-        }
-        
-        .toggle-btn.active {
-            background: #667eea;
-            color: white;
-        }
-        
-        .toggle-btn:hover:not(.active) {
-            background: #e2e8f0;
-        }
-        
-        .search-container {
+        .creative-brief-form {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 12px;
             margin-bottom: 20px;
-        }
-        
-        .search-input {
-            width: 100%;
-            max-width: 400px;
-            padding: 12px 16px;
-            border: 2px solid #e2e8f0;
-            border-radius: 8px;
-            font-size: 16px;
-            transition: border-color 0.3s ease;
-        }
-        
-        .search-input:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-        
-        .search-input::placeholder {
-            color: #94a3b8;
-        }
-        
-        .table-container {
-            overflow-x: auto;
-            margin-top: 20px;
-        }
-        
-        .performance-table {
-            width: 100%;
-            border-collapse: collapse;
-            background: white;
-            border-radius: 8px;
-            overflow: hidden;
-        }
-        
-        .performance-table th,
-        .performance-table td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid #e2e8f0;
-        }
-        
-        .performance-table th {
-            background: #f8fafc;
-            font-weight: 600;
-            color: #374151;
-        }
-        
-        .performance-table tr:hover {
-            background: #f8fafc;
-        }
-        
-        .expandable-row {
-            cursor: pointer;
-        }
-        
-        .expandable-row:hover {
-            background: #f1f5f9;
-        }
-        
-        .expand-icon {
-            margin-right: 8px;
-            transition: transform 0.3s ease;
-        }
-        
-        .expand-icon.expanded {
-            transform: rotate(90deg);
-        }
-        
-        .child-row {
-            background: #f8fafc;
-        }
-        
-        .child-row td:first-child {
-            padding-left: 40px;
-        }
-        
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #64748b;
         }
         
         .form-group {
@@ -282,82 +373,245 @@
         .form-group label {
             display: block;
             margin-bottom: 8px;
-            font-weight: 500;
-            color: #374151;
+            font-weight: 600;
+            color: #495057;
         }
         
-        .form-group input,
-        .form-group select {
+        .form-group select,
+        .form-group input {
             width: 100%;
-            padding: 12px;
-            border: 2px solid #e2e8f0;
-            border-radius: 8px;
-            font-size: 16px;
+            padding: 10px;
+            border: 2px solid #e9ecef;
+            border-radius: 6px;
+            font-size: 1rem;
         }
         
-        .form-group input:focus,
-        .form-group select:focus {
+        .form-group select:focus,
+        .form-group input:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: #1e3c72;
         }
         
-        .insights-content {
-            background: #f8fafc;
-            padding: 20px;
-            border-radius: 8px;
-            margin-top: 20px;
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+        
+        .brief-content {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            border: 1px solid #dee2e6;
             white-space: pre-wrap;
             line-height: 1.6;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
         }
         
-        .recommendation-item {
-            background: #f8fafc;
-            padding: 15px;
-            border-radius: 8px;
+        .recommendations-grid {
+            display: grid;
+            gap: 15px;
+        }
+        
+        .recommendation-card {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            border-left: 4px solid #1e3c72;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .recommendation-card.pause {
+            border-left-color: #dc3545;
+        }
+        
+        .recommendation-card.scale {
+            border-left-color: #28a745;
+        }
+        
+        .recommendation-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
             margin-bottom: 10px;
-            border-left: 4px solid #667eea;
         }
         
-        .recommendation-item.high-priority {
-            border-left-color: #ef4444;
+        .recommendation-action {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
         }
         
-        .recommendation-item.medium-priority {
-            border-left-color: #f59e0b;
+        .recommendation-action.pause {
+            background: #f8d7da;
+            color: #721c24;
         }
         
-        .recommendation-checkbox {
-            margin-right: 10px;
+        .recommendation-action.scale {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .priority-badge {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .priority-badge.high {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .priority-badge.medium {
+            background: #ffc107;
+            color: #212529;
+        }
+        
+        .automation-panels {
+            display: grid;
+            gap: 30px;
+        }
+        
+        .settings-panel {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 12px;
+        }
+        
+        .settings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .settings-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .setting-item {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+        }
+        
+        .setting-item label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #495057;
+            font-size: 0.9rem;
+        }
+        
+        .setting-item input,
+        .setting-item select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 6px;
+            font-size: 1rem;
+        }
+        
+        .setting-item input:focus,
+        .setting-item select:focus {
+            outline: none;
+            border-color: #1e3c72;
+        }
+        
+        .setting-item .description {
+            font-size: 0.8rem;
+            color: #6c757d;
+            margin-top: 5px;
+        }
+        
+        .settings-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+        
+        .status-message {
+            padding: 12px 20px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+        
+        .status-message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status-message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .settings-summary {
+            background: #e9ecef;
+            padding: 20px;
+            border-radius: 12px;
+            margin-top: 20px;
+        }
+        
+        .settings-summary h4 {
+            margin-bottom: 15px;
+        }
+        
+        .settings-summary-content {
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            line-height: 1.6;
         }
         
         @media (max-width: 768px) {
             .container {
-                padding: 10px;
+                margin: 10px;
+                border-radius: 10px;
+            }
+            
+            .header {
+                padding: 20px;
             }
             
             .header h1 {
                 font-size: 2rem;
             }
             
-            .stats-grid {
-                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-                gap: 15px;
+            .tab-content {
+                padding: 20px;
             }
             
-            .tabs {
+            .summary-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .table-container {
+                overflow-x: auto;
+            }
+            
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+            
+            .settings-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .settings-actions {
                 flex-direction: column;
-            }
-            
-            .tab {
-                margin-bottom: 5px;
-            }
-            
-            .toggle-group {
-                flex-direction: column;
-            }
-            
-            .search-input {
-                max-width: 100%;
             }
         }
     </style>
@@ -365,260 +619,493 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>🚀 Facebook Optimization Tool</h1>
-            <p>AI-Powered Media Buying Optimization with Real-Time Insights</p>
+            <h1>🚀 Facebook Optimization Dashboard</h1>
+            <p>AI-Powered Media Buying Intelligence with Real-Time Automation Control</p>
         </div>
         
         <div class="tabs">
-            <button class="tab active" onclick="showTab('dashboard')">📊 Performance Dashboard</button>
+            <button class="tab active" onclick="showTab('summary')">📊 Performance Summary</button>
+            <button class="tab" onclick="showTab('dashboard')">📈 Performance Dashboard</button>
             <button class="tab" onclick="showTab('optimization')">⚡ Optimization</button>
-            <button class="tab" onclick="showTab('creative-brief')">📝 Creative Brief</button>
-            <button class="tab" onclick="showTab('ai-insights')">🤖 AI Insights</button>
-            <button class="tab" onclick="showTab('automation')">🔄 Automation</button>
+            <button class="tab" onclick="showTab('insights')">🧠 AI Insights</button>
+            <button class="tab" onclick="showTab('creative')">🎨 Creative Brief</button>
+            <button class="tab" onclick="showTab('automation')">🤖 Automation</button>
+        </div>
+        
+        <!-- Performance Summary Tab -->
+        <div id="summary" class="tab-content active">
+            <div class="summary-grid" id="summaryGrid">
+                <div class="loading">Loading performance summary...</div>
+            </div>
         </div>
         
         <!-- Performance Dashboard Tab -->
-        <div id="dashboard" class="tab-content active">
-            <div class="stats-grid" id="stats-grid">
-                <!-- Stats will be loaded here -->
+        <div id="dashboard" class="tab-content">
+            <div class="search-container">
+                <input type="text" class="search-input" id="searchInput" placeholder="🔍 Search ad sets and ads..." onkeyup="filterPerformanceData()">
+                <span class="search-icon">🔍</span>
             </div>
             
-            <div class="card">
-                <h3>📈 Performance Overview Table</h3>
-                
-                <div class="toggle-group">
-                    <button class="toggle-btn active" id="adset-view-btn" onclick="toggleView('adset')">
-                        📁 Ad Set View
-                    </button>
-                    <button class="toggle-btn" id="ad-view-btn" onclick="toggleView('ad')">
-                        📄 Ad View
-                    </button>
-                    <button class="btn btn-secondary" onclick="refreshPerformanceTable()">
-                        🔄 Refresh Data
-                    </button>
-                </div>
-                
-                <div class="search-container">
-                    <input 
-                        type="text" 
-                        id="search-input" 
-                        class="search-input" 
-                        placeholder="🔍 Search ad sets and ads..." 
-                        onkeyup="filterPerformanceTable()"
-                    >
-                </div>
-                
-                <div class="table-container">
-                    <table class="performance-table" id="performance-table">
-                        <thead>
-                            <tr id="table-headers">
-                                <!-- Headers will be populated dynamically -->
-                            </tr>
-                        </thead>
-                        <tbody id="table-body">
-                            <!-- Data will be populated dynamically -->
-                        </tbody>
-                    </table>
-                </div>
+            <div class="table-container">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Status</th>
+                            <th>Ad Set Name</th>
+                            <th>Ad Name</th>
+                            <th>Spend</th>
+                            <th>Impressions</th>
+                            <th>Clicks</th>
+                            <th>CTR</th>
+                            <th>CPC</th>
+                            <th>CPM</th>
+                            <th>Funnel Start %</th>
+                            <th>Booking %</th>
+                            <th>Appointment Completion %</th>
+                            <th>Bookings</th>
+                            <th>CPA</th>
+                            <th>ROAS</th>
+                        </tr>
+                    </thead>
+                    <tbody id="performanceTable">
+                        <tr><td colspan="15" class="loading">Loading performance data...</td></tr>
+                    </tbody>
+                </table>
             </div>
         </div>
         
         <!-- Optimization Tab -->
         <div id="optimization" class="tab-content">
-            <div class="card">
-                <h3>⚡ Optimization Recommendations</h3>
-                <button class="btn" onclick="loadOptimizationRecommendations()">🔄 Refresh Recommendations</button>
-                
-                <div id="optimization-content">
-                    <div class="loading">Loading optimization recommendations...</div>
-                </div>
-                
-                <div id="selected-actions" style="margin-top: 20px; display: none;">
-                    <h4>Selected Actions:</h4>
-                    <button class="btn btn-success" onclick="executeSelectedActions()">✅ Execute Selected</button>
-                    <button class="btn btn-secondary" onclick="clearSelections()">❌ Clear All</button>
+            <h2 style="margin-bottom: 20px;">🎯 Optimization Recommendations</h2>
+            <div class="recommendations-grid" id="recommendationsGrid">
+                <div class="loading">Loading optimization recommendations...</div>
+            </div>
+        </div>
+        
+        <!-- AI Insights Tab -->
+        <div id="insights" class="tab-content">
+            <h2 style="margin-bottom: 20px;">🧠 AI-Powered Insights</h2>
+            
+            <div class="insights-buttons">
+                <button class="btn btn-primary" onclick="generateInsights('cluster')">📊 Cluster Analysis</button>
+                <button class="btn btn-primary" onclick="generateInsights('creative_copy')">✍️ Creative Copy Analysis</button>
+                <button class="btn btn-primary" onclick="generateInsights('cro')">🔄 CRO Analysis</button>
+                <button class="btn btn-primary" onclick="generateInsights('strategy')">📈 Strategy Recommendations</button>
+            </div>
+            
+            <div class="insights-container">
+                <div class="insights-content" id="insightsContent">
+                    Click any button above to generate AI-powered insights based on your performance data.
                 </div>
             </div>
         </div>
         
         <!-- Creative Brief Tab -->
-        <div id="creative-brief" class="tab-content">
-            <div class="card">
-                <h3>📝 AI-Enhanced Creative Brief Generator</h3>
-                
-                <div class="form-group">
-                    <label for="campaign-name">Campaign Name:</label>
-                    <input type="text" id="campaign-name" placeholder="Enter campaign name">
-                </div>
-                
-                <div class="form-group">
-                    <label for="campaign-type">Campaign Type:</label>
-                    <select id="campaign-type">
-                        <option value="Seasonal">Seasonal</option>
-                        <option value="Evergreen">Evergreen</option>
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <label for="messaging-pillar">Messaging Pillar:</label>
-                    <select id="messaging-pillar">
-                        <option value="Convenience">Convenience & Easy Booking</option>
-                        <option value="Quality">Quality & 5-Star Dentists</option>
-                        <option value="Insurance">Insurance Coverage</option>
-                        <option value="Reward">Reward & Incentive</option>
-                        <option value="Urgency">Urgency & Limited Time</option>
-                        <option value="Trust">Trust & Safety</option>
-                        <option value="Family">Family & Kids</option>
-                        <option value="Emergency">Emergency Care</option>
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <label for="value-pillar">Value Pillar:</label>
-                    <select id="value-pillar">
-                        <option value="Convenience-Insurance">Convenience + Insurance Coverage</option>
-                        <option value="Quality-Network">Quality Network + 5-Star Dentists</option>
-                        <option value="Reward-Incentive">Reward Program + Incentives</option>
-                        <option value="Trust-Safety">Trust + Safety Assurance</option>
-                        <option value="Speed-Efficiency">Speed + Booking Efficiency</option>
-                        <option value="Family-Care">Family Care + Kids Dentistry</option>
-                        <option value="Emergency-Availability">Emergency + 24/7 Availability</option>
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <label>Creative Format:</label>
-                    <div class="toggle-group">
-                        <button class="toggle-btn active" id="static-format-btn" onclick="toggleFormat('static')">
-                            🖼️ Static Ads
-                        </button>
-                        <button class="toggle-btn" id="video-format-btn" onclick="toggleFormat('video')">
-                            🎥 Video Ads
-                        </button>
+        <div id="creative" class="tab-content">
+            <h2 style="margin-bottom: 20px;">🎨 Creative Brief Generator</h2>
+            
+            <div class="creative-brief-form">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="campaignName">Campaign Name</label>
+                        <input type="text" id="campaignName" value="New Campaign" />
+                    </div>
+                    <div class="form-group">
+                        <label for="campaignType">Campaign Type</label>
+                        <select id="campaignType">
+                            <option value="Seasonal">Seasonal</option>
+                            <option value="Evergreen">Evergreen</option>
+                            <option value="Promotional">Promotional</option>
+                        </select>
                     </div>
                 </div>
                 
-                <button class="btn" onclick="generateCreativeBrief()">🚀 Generate AI Brief</button>
-                
-                <div id="brief-content" style="margin-top: 20px;">
-                    <!-- Brief content will appear here -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="messagingPillar">Messaging Pillar</label>
+                        <select id="messagingPillar">
+                            <option value="Convenience">Convenience</option>
+                            <option value="Trust">Trust</option>
+                            <option value="Value">Value</option>
+                            <option value="Innovation">Innovation</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="valuePillar">Value Pillar</label>
+                        <select id="valuePillar">
+                            <option value="Convenience-Insurance">Convenience-Insurance</option>
+                            <option value="Trust-Security">Trust-Security</option>
+                            <option value="Value-Savings">Value-Savings</option>
+                            <option value="Innovation-Technology">Innovation-Technology</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="creativeFormat">Creative Format</label>
+                        <select id="creativeFormat">
+                            <option value="static">Static Image</option>
+                            <option value="video">Video</option>
+                            <option value="carousel">Carousel</option>
+                            <option value="collection">Collection</option>
+                        </select>
+                    </div>
                 </div>
+                
+                <button class="btn btn-primary" onclick="generateCreativeBrief()">🎨 Generate Creative Brief</button>
             </div>
-        </div>
-        
-        <!-- AI Insights Tab -->
-        <div id="ai-insights" class="tab-content">
-            <div class="card">
-                <h3>🤖 AI-Powered Insights & CRO Analysis</h3>
-                
-                <div class="toggle-group">
-                    <button class="btn" onclick="generateAIInsights('cluster')">📊 Cluster Analysis</button>
-                    <button class="btn" onclick="generateAIInsights('creative_copy')">✍️ Creative Copy Analysis</button>
-                    <button class="btn" onclick="generateAIInsights('cro')">🎯 CRO & Funnel Analysis</button>
-                    <button class="btn" onclick="generateAIInsights('strategy')">📈 Strategy Recommendations</button>
-                </div>
-                
-                <div id="insights-content">
-                    <div class="insights-content">
-                        Click any button above to generate AI-powered insights based on your performance data.
-                        
-                        Available Analysis Types:
-                        • Cluster Analysis - Performance patterns and audience insights
-                        • Creative Copy Analysis - Messaging and copy performance patterns
-                        • CRO & Funnel Analysis - Landing page optimization and conversion insights
-                        • Strategy Recommendations - Campaign optimization strategies
-                    </div>
-                </div>
+            
+            <div class="brief-content" id="briefContent">
+                Configure your campaign parameters above and click "Generate Creative Brief" to create a detailed brief for your design team.
             </div>
         </div>
         
         <!-- Automation Tab -->
         <div id="automation" class="tab-content">
-            <div class="card">
-                <h3>🔄 Automation Status</h3>
-                <button class="btn" onclick="loadAutomationStatus()">🔄 Refresh Status</button>
-                <button class="btn btn-success" onclick="refreshAllData()">📊 Manual Data Refresh</button>
+            <h2 style="margin-bottom: 20px;">🤖 Automation & Settings Control</h2>
+            
+            <div id="automationStatusMessage"></div>
+            
+            <div class="automation-panels">
+                <!-- KPI Settings Panel -->
+                <div class="settings-panel">
+                    <div class="settings-header">
+                        <h3>🎯 Success Criteria KPI Thresholds</h3>
+                    </div>
+                    
+                    <div class="settings-grid">
+                        <div class="setting-item">
+                            <label for="ctrThreshold">CTR Threshold (%)</label>
+                            <input type="number" id="ctrThreshold" step="0.01" min="0" />
+                            <div class="description">Minimum click-through rate for successful ads</div>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label for="funnelStartThreshold">Funnel Start Rate (%)</label>
+                            <input type="number" id="funnelStartThreshold" step="0.1" min="0" />
+                            <div class="description">Minimum funnel start rate for successful ads</div>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label for="cpaThreshold">CPA Threshold ($)</label>
+                            <input type="number" id="cpaThreshold" step="1" min="0" />
+                            <div class="description">Maximum cost per acquisition for successful ads</div>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label for="clicksThreshold">Clicks Threshold</label>
+                            <input type="number" id="clicksThreshold" step="1" min="0" />
+                            <div class="description">Minimum clicks required for successful ads</div>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label for="roasThreshold">ROAS Threshold</label>
+                            <input type="number" id="roasThreshold" step="0.1" min="0" />
+                            <div class="description">Minimum return on ad spend for successful ads</div>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label for="cpcThreshold">CPC Threshold ($)</label>
+                            <input type="number" id="cpcThreshold" step="0.01" min="0" />
+                            <div class="description">Maximum cost per click for successful ads</div>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label for="cpmThreshold">CPM Threshold ($)</label>
+                            <input type="number" id="cpmThreshold" step="0.01" min="0" />
+                            <div class="description">Maximum cost per thousand impressions</div>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label for="bookingConversionThreshold">Booking Conversion Rate (%)</label>
+                            <input type="number" id="bookingConversionThreshold" step="0.1" min="0" />
+                            <div class="description">Minimum booking conversion rate for successful ads</div>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-actions">
+                        <button class="btn btn-secondary" onclick="resetKpiSettings()">🔄 Reset KPI Defaults</button>
+                        <button class="btn btn-success" onclick="saveKpiSettings()">💾 Save KPI Settings</button>
+                    </div>
+                </div>
                 
-                <div id="automation-status">
-                    <div class="loading">Loading automation status...</div>
+                <!-- Optimization Rules Panel -->
+                <div class="settings-panel">
+                    <div class="settings-header">
+                        <h3>⚡ Optimization Rules Configuration</h3>
+                    </div>
+                    
+                    <h4 style="margin-bottom: 15px; color: #dc3545;">🛑 Pause Rules</h4>
+                    <div class="settings-grid">
+                        <div class="setting-item">
+                            <label for="pauseRoasThreshold">Pause ROAS Threshold</label>
+                            <input type="number" id="pauseRoasThreshold" step="0.1" min="0" />
+                            <div class="description">Pause ads with ROAS below this threshold</div>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label for="pauseSpendThreshold">Pause Spend Threshold ($)</label>
+                            <input type="number" id="pauseSpendThreshold" step="1" min="0" />
+                            <div class="description">Minimum spend required to trigger ROAS pause rule</div>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label for="pauseCpaThreshold">Pause CPA Threshold ($)</label>
+                            <input type="number" id="pauseCpaThreshold" step="1" min="0" />
+                            <div class="description">Pause ads with CPA above this threshold</div>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label for="pauseCpaSpendThreshold">Pause CPA Spend Threshold ($)</label>
+                            <input type="number" id="pauseCpaSpendThreshold" step="1" min="0" />
+                            <div class="description">Minimum spend required to trigger CPA pause rule</div>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label for="pauseCtrThreshold">Pause CTR Threshold (%)</label>
+                            <input type="number" id="pauseCtrThreshold" step="0.01" min="0" />
+                            <div class="description">Pause ads with CTR below this threshold</div>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label for="pauseCtrSpendThreshold">Pause CTR Spend Threshold ($)</label>
+                            <input type="number" id="pauseCtrSpendThreshold" step="1" min="0" />
+                            <div class="description">Minimum spend required to trigger CTR pause rule</div>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label for="pauseNoBookingsThreshold">No Bookings Spend Threshold ($)</label>
+                            <input type="number" id="pauseNoBookingsThreshold" step="1" min="0" />
+                            <div class="description">Pause ads with no bookings above this spend</div>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label for="pauseHighCpcThreshold">Pause High CPC Threshold ($)</label>
+                            <input type="number" id="pauseHighCpcThreshold" step="0.01" min="0" />
+                            <div class="description">Pause ads with CPC above this threshold</div>
+                        </div>
+                    </div>
+                    
+                    <h4 style="margin: 25px 0 15px 0; color: #28a745;">📈 Scale Rules</h4>
+                    <div class="settings-grid">
+                        <div class="setting-item">
+                            <label for="scaleRoasThreshold">Scale ROAS Threshold</label>
+                            <input type="number" id="scaleRoasThreshold" step="0.1" min="0" />
+                            <div class="description">Scale ads with ROAS above this threshold</div>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label for="scaleMinSpendThreshold">Scale Min Spend Threshold ($)</label>
+                            <input type="number" id="scaleMinSpendThreshold" step="1" min="0" />
+                            <div class="description">Minimum spend required to trigger scale rules</div>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label for="scaleAllCriteriaRequired">Require All Success Criteria</label>
+                            <select id="scaleAllCriteriaRequired">
+                                <option value="true">Yes - All criteria must be met</option>
+                                <option value="false">No - ROAS threshold is sufficient</option>
+                            </select>
+                            <div class="description">Whether all KPI criteria must be met for scaling</div>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label for="scaleCtrBonusThreshold">Scale CTR Bonus Threshold (%)</label>
+                            <input type="number" id="scaleCtrBonusThreshold" step="0.01" min="0" />
+                            <div class="description">Scale ads with exceptional CTR above this threshold</div>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label for="scaleCpaBonusThreshold">Scale CPA Bonus Threshold ($)</label>
+                            <input type="number" id="scaleCpaBonusThreshold" step="1" min="0" />
+                            <div class="description">Scale ads with CPA below this bonus threshold</div>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label for="scaleBookingRateThreshold">Scale Booking Rate Threshold (%)</label>
+                            <input type="number" id="scaleBookingRateThreshold" step="0.1" min="0" />
+                            <div class="description">Scale ads with booking rate above this threshold</div>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label for="highPrioritySpendThreshold">High Priority Spend Threshold ($)</label>
+                            <input type="number" id="highPrioritySpendThreshold" step="1" min="0" />
+                            <div class="description">Spend threshold for high priority recommendations</div>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label for="mediumPrioritySpendThreshold">Medium Priority Spend Threshold ($)</label>
+                            <input type="number" id="mediumPrioritySpendThreshold" step="1" min="0" />
+                            <div class="description">Spend threshold for medium priority recommendations</div>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-actions">
+                        <button class="btn btn-secondary" onclick="resetOptimizationRules()">🔄 Reset Rule Defaults</button>
+                        <button class="btn btn-success" onclick="saveOptimizationRules()">💾 Save Optimization Rules</button>
+                    </div>
                 </div>
             </div>
             
-            <div class="card">
-                <h3>🧪 API Testing</h3>
-                <button class="btn" onclick="testOpenAI()">🤖 Test OpenAI</button>
-                <button class="btn" onclick="testFacebook()">📘 Test Facebook API</button>
-                
-                <div id="api-test-results">
-                    <!-- Test results will appear here -->
+            <!-- Settings Summary -->
+            <div class="settings-summary">
+                <h4>📋 Current Settings Summary</h4>
+                <div id="settingsSummary" class="settings-summary-content">
+                    Loading current settings...
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        let currentView = 'adset';
-        let currentFormat = 'static';
         let performanceData = [];
-        let filteredData = [];
+        let allPerformanceData = [];
         
         // Tab switching
         function showTab(tabName) {
-            // Hide all tab contents
-            document.querySelectorAll('.tab-content').forEach(content => {
-                content.classList.remove('active');
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
             });
-            
-            // Remove active class from all tabs
             document.querySelectorAll('.tab').forEach(tab => {
                 tab.classList.remove('active');
             });
             
-            // Show selected tab content
+            // Show selected tab
             document.getElementById(tabName).classList.add('active');
-            
-            // Add active class to clicked tab
             event.target.classList.add('active');
             
             // Load data for specific tabs
-            if (tabName === 'dashboard') {
+            if (tabName === 'summary') {
+                loadPerformanceSummary();
+            } else if (tabName === 'dashboard') {
                 loadPerformanceData();
             } else if (tabName === 'optimization') {
                 loadOptimizationRecommendations();
             } else if (tabName === 'automation') {
-                loadAutomationStatus();
+                loadAutomationSettings();
             }
         }
         
-        // View toggle
-        function toggleView(view) {
-            currentView = view;
-            
-            // Update button states
-            document.getElementById('adset-view-btn').classList.toggle('active', view === 'adset');
-            document.getElementById('ad-view-btn').classList.toggle('active', view === 'ad');
-            
-            // Refresh table
-            renderPerformanceTable();
+        // Load performance summary
+        async function loadPerformanceSummary() {
+            try {
+                const response = await fetch('/api/performance-summary');
+                const data = await response.json();
+                
+                const summaryGrid = document.getElementById('summaryGrid');
+                summaryGrid.innerHTML = `
+                    <div class="summary-card">
+                        <h3>Total Ads</h3>
+                        <div class="value">${data.total_ads}</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Total Spend</h3>
+                        <div class="value">$${data.total_spend.toLocaleString()}</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Total Revenue</h3>
+                        <div class="value">$${data.total_revenue.toLocaleString()}</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Total Impressions</h3>
+                        <div class="value">${data.total_impressions.toLocaleString()}</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Total Clicks</h3>
+                        <div class="value">${data.total_clicks.toLocaleString()}</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Average CTR</h3>
+                        <div class="value">${data.avg_ctr.toFixed(2)}%</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Average CPC</h3>
+                        <div class="value">$${data.avg_cpc.toFixed(2)}</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Average CPM</h3>
+                        <div class="value">$${data.avg_cpm.toFixed(2)}</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Average ROAS</h3>
+                        <div class="value">${data.avg_roas.toFixed(2)}</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Successful Ads</h3>
+                        <div class="value">${data.successful_ads}</div>
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Error loading performance summary:', error);
+                document.getElementById('summaryGrid').innerHTML = '<div class="loading">Error loading summary data</div>';
+            }
         }
         
-        // Format toggle
-        function toggleFormat(format) {
-            currentFormat = format;
-            
-            // Update button states
-            document.getElementById('static-format-btn').classList.toggle('active', format === 'static');
-            document.getElementById('video-format-btn').classList.toggle('active', format === 'video');
+        // Load performance data
+        async function loadPerformanceData() {
+            try {
+                const response = await fetch('/api/performance-data');
+                const data = await response.json();
+                allPerformanceData = data;
+                performanceData = data;
+                renderPerformanceTable();
+            } catch (error) {
+                console.error('Error loading performance data:', error);
+                document.getElementById('performanceTable').innerHTML = '<tr><td colspan="15">Error loading performance data</td></tr>';
+            }
         }
         
-        // Search/Filter functionality
-        function filterPerformanceTable() {
-            const searchTerm = document.getElementById('search-input').value.toLowerCase();
+        // Render performance table
+        function renderPerformanceTable() {
+            const tableBody = document.getElementById('performanceTable');
+            
+            if (performanceData.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="15" style="text-align: center; padding: 40px;">No data matches your search criteria</td></tr>';
+                return;
+            }
+            
+            const rows = performanceData.map(ad => {
+                const successCount = Object.values(ad.success_criteria).filter(Boolean).length;
+                const totalCriteria = Object.keys(ad.success_criteria).length;
+                
+                let statusIndicator = 'danger';
+                if (successCount === totalCriteria) statusIndicator = 'success';
+                else if (successCount >= totalCriteria * 0.6) statusIndicator = 'warning';
+                
+                return `
+                    <tr>
+                        <td>
+                            <span class="success-indicator ${statusIndicator}"></span>
+                            ${successCount}/${totalCriteria}
+                        </td>
+                        <td title="${ad.ad_set_name}">${ad.ad_set_name}</td>
+                        <td title="${ad.ad_name}">${ad.ad_name}</td>
+                        <td class="metric">$${ad.spend.toFixed(2)}</td>
+                        <td class="metric">${ad.impressions.toLocaleString()}</td>
+                        <td class="metric">${ad.clicks.toLocaleString()}</td>
+                        <td class="metric ${ad.success_criteria.ctr_good ? 'good' : 'bad'}">${ad.ctr.toFixed(2)}%</td>
+                        <td class="metric ${ad.success_criteria.cpc_good ? 'good' : 'bad'}">$${ad.cpc.toFixed(2)}</td>
+                        <td class="metric ${ad.success_criteria.cpm_good ? 'good' : 'bad'}">$${ad.cpm.toFixed(2)}</td>
+                        <td class="metric ${ad.success_criteria.funnel_start_good ? 'good' : 'bad'}">${ad.funnel_start_rate.toFixed(1)}%</td>
+                        <td class="metric ${ad.success_criteria.booking_conversion_good ? 'good' : 'bad'}">${ad.booking_conversion_rate.toFixed(1)}%</td>
+                        <td class="metric">${(ad.completion_rate * 100).toFixed(1)}%</td>
+                        <td class="metric">${ad.bookings.toFixed(0)}</td>
+                        <td class="metric ${ad.success_criteria.cpa_good ? 'good' : 'bad'}">$${ad.cpa.toFixed(2)}</td>
+                        <td class="metric ${ad.success_criteria.roas_good ? 'good' : 'bad'}">${ad.roas.toFixed(2)}</td>
+                    </tr>
+                `;
+            }).join('');
+            
+            tableBody.innerHTML = rows;
+        }
+        
+        // Filter performance data
+        function filterPerformanceData() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
             
             if (searchTerm === '') {
-                filteredData = performanceData;
+                performanceData = allPerformanceData;
             } else {
-                filteredData = performanceData.filter(ad => 
+                performanceData = allPerformanceData.filter(ad => 
                     ad.ad_name.toLowerCase().includes(searchTerm) || 
                     ad.ad_set_name.toLowerCase().includes(searchTerm)
                 );
@@ -627,384 +1114,357 @@
             renderPerformanceTable();
         }
         
-        // Load performance data
-        async function loadPerformanceData() {
-            try {
-                // Load summary stats
-                const summaryResponse = await fetch('/api/performance-summary');
-                const summary = await summaryResponse.json();
-                renderSummaryStats(summary);
-                
-                // Load performance data
-                const dataResponse = await fetch('/api/performance-data');
-                performanceData = await dataResponse.json();
-                filteredData = performanceData;
-                
-                renderPerformanceTable();
-            } catch (error) {
-                console.error('Error loading performance data:', error);
-            }
-        }
-        
-        // Render summary stats
-        function renderSummaryStats(summary) {
-            const statsGrid = document.getElementById('stats-grid');
-            statsGrid.innerHTML = `
-                <div class="stat-card">
-                    <div class="stat-value">${summary.total_ads}</div>
-                    <div class="stat-label">Total Ads</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">$${summary.total_spend.toLocaleString()}</div>
-                    <div class="stat-label">Total Spend</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">$${summary.total_revenue.toLocaleString()}</div>
-                    <div class="stat-label">Total Revenue</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">${summary.avg_roas.toFixed(2)}</div>
-                    <div class="stat-label">Avg ROAS</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">$${summary.avg_cpa.toFixed(2)}</div>
-                    <div class="stat-label">Avg CPA</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">${summary.successful_ads}</div>
-                    <div class="stat-label">Successful Ads</div>
-                </div>
-            `;
-        }
-        
-        // Render performance table
-        function renderPerformanceTable() {
-            const tableHeaders = document.getElementById('table-headers');
-            const tableBody = document.getElementById('table-body');
-            
-            if (currentView === 'adset') {
-                // Group by ad set
-                const adSetGroups = {};
-                filteredData.forEach(ad => {
-                    if (!adSetGroups[ad.ad_set_name]) {
-                        adSetGroups[ad.ad_set_name] = [];
-                    }
-                    adSetGroups[ad.ad_set_name].push(ad);
-                });
-                
-                // Headers
-                tableHeaders.innerHTML = `
-                    <th>Ad Set Name</th>
-                    <th>Spend</th>
-                    <th>Clicks</th>
-                    <th>CTR %</th>
-                    <th>CPC</th>
-                    <th>Bookings</th>
-                    <th>CPA</th>
-                    <th>ROAS</th>
-                    <th>Success</th>
-                `;
-                
-                // Body
-                let html = '';
-                Object.entries(adSetGroups).forEach(([adSetName, ads]) => {
-                    // Aggregate ad set data
-                    const totalSpend = ads.reduce((sum, ad) => sum + ad.spend, 0);
-                    const totalClicks = ads.reduce((sum, ad) => sum + ad.clicks, 0);
-                    const totalImpressions = ads.reduce((sum, ad) => sum + ad.impressions, 0);
-                    const totalBookings = ads.reduce((sum, ad) => sum + ad.bookings, 0);
-                    const totalRevenue = ads.reduce((sum, ad) => sum + ad.revenue, 0);
-                    const totalPromoSpend = ads.reduce((sum, ad) => sum + ad.promo_spend, 0);
-                    
-                    const avgCTR = totalImpressions > 0 ? (totalClicks / totalImpressions * 100) : 0;
-                    const avgCPC = totalClicks > 0 ? (totalSpend / totalClicks) : 0;
-                    const avgCPA = totalBookings > 0 ? (totalSpend / totalBookings) : 0;
-                    const avgCompletion = ads.reduce((sum, ad) => sum + ad.completion_rate, 0) / ads.length;
-                    const effectiveBookings = totalBookings * avgCompletion;
-                    const totalCost = totalSpend + totalPromoSpend;
-                    const avgLTV = effectiveBookings > 0 ? (totalRevenue / effectiveBookings) : 0;
-                    const avgCAC = effectiveBookings > 0 ? (totalCost / effectiveBookings) : 0;
-                    const avgROAS = avgCAC > 0 ? (avgLTV / avgCAC) : 0;
-                    
-                    const successfulAds = ads.filter(ad => ad.all_criteria_met).length;
-                    
-                    html += `
-                        <tr class="expandable-row" onclick="toggleAdSetExpansion('${adSetName}')">
-                            <td>
-                                <span class="expand-icon" id="icon-${adSetName}">▶</span>
-                                ${adSetName}
-                            </td>
-                            <td>$${totalSpend.toLocaleString()}</td>
-                            <td>${totalClicks.toLocaleString()}</td>
-                            <td>${avgCTR.toFixed(2)}%</td>
-                            <td>$${avgCPC.toFixed(2)}</td>
-                            <td>${totalBookings.toFixed(1)}</td>
-                            <td>$${avgCPA.toFixed(2)}</td>
-                            <td>${avgROAS.toFixed(2)}</td>
-                            <td>${successfulAds}/${ads.length}</td>
-                        </tr>
-                    `;
-                    
-                    // Child rows (initially hidden)
-                    ads.forEach(ad => {
-                        html += `
-                            <tr class="child-row" id="child-${adSetName}" style="display: none;">
-                                <td>${ad.ad_name}</td>
-                                <td>$${ad.spend.toLocaleString()}</td>
-                                <td>${ad.clicks.toLocaleString()}</td>
-                                <td>${ad.ctr.toFixed(2)}%</td>
-                                <td>$${ad.cpc.toFixed(2)}</td>
-                                <td>${ad.bookings.toFixed(1)}</td>
-                                <td>$${ad.cpa.toFixed(2)}</td>
-                                <td>${ad.roas.toFixed(2)}</td>
-                                <td>${ad.all_criteria_met ? '✅' : '❌'}</td>
-                            </tr>
-                        `;
-                    });
-                });
-                
-                tableBody.innerHTML = html;
-            } else {
-                // Ad view
-                tableHeaders.innerHTML = `
-                    <th>Ad Name</th>
-                    <th>Ad Set</th>
-                    <th>Spend</th>
-                    <th>Clicks</th>
-                    <th>CTR %</th>
-                    <th>CPC</th>
-                    <th>Bookings</th>
-                    <th>CPA</th>
-                    <th>ROAS</th>
-                    <th>Success</th>
-                `;
-                
-                let html = '';
-                filteredData.forEach(ad => {
-                    html += `
-                        <tr>
-                            <td>${ad.ad_name}</td>
-                            <td>${ad.ad_set_name}</td>
-                            <td>$${ad.spend.toLocaleString()}</td>
-                            <td>${ad.clicks.toLocaleString()}</td>
-                            <td>${ad.ctr.toFixed(2)}%</td>
-                            <td>$${ad.cpc.toFixed(2)}</td>
-                            <td>${ad.bookings.toFixed(1)}</td>
-                            <td>$${ad.cpa.toFixed(2)}</td>
-                            <td>${ad.roas.toFixed(2)}</td>
-                            <td>${ad.all_criteria_met ? '✅' : '❌'}</td>
-                        </tr>
-                    `;
-                });
-                
-                tableBody.innerHTML = html;
-            }
-        }
-        
-        // Toggle ad set expansion
-        function toggleAdSetExpansion(adSetName) {
-            const icon = document.getElementById(`icon-${adSetName}`);
-            const childRows = document.querySelectorAll(`#child-${adSetName}`);
-            
-            const isExpanded = icon.classList.contains('expanded');
-            
-            if (isExpanded) {
-                icon.classList.remove('expanded');
-                icon.textContent = '▶';
-                childRows.forEach(row => row.style.display = 'none');
-            } else {
-                icon.classList.add('expanded');
-                icon.textContent = '▼';
-                childRows.forEach(row => row.style.display = 'table-row');
-            }
-        }
-        
-        // Refresh performance table
-        function refreshPerformanceTable() {
-            loadPerformanceData();
-        }
-        
         // Load optimization recommendations
         async function loadOptimizationRecommendations() {
             try {
                 const response = await fetch('/api/optimization-recommendations');
-                const recommendations = await response.json();
+                const data = await response.json();
                 
-                const content = document.getElementById('optimization-content');
+                const recommendationsGrid = document.getElementById('recommendationsGrid');
                 
-                if (recommendations.length === 0) {
-                    content.innerHTML = '<div class="loading">No optimization recommendations available.</div>';
+                if (data.length === 0) {
+                    recommendationsGrid.innerHTML = '<div style="text-align: center; padding: 40px; color: #6c757d;">No optimization recommendations at this time.</div>';
                     return;
                 }
                 
-                let html = '';
-                recommendations.forEach((rec, index) => {
-                    html += `
-                        <div class="recommendation-item ${rec.priority}-priority">
-                            <input type="checkbox" class="recommendation-checkbox" id="rec-${index}" 
-                                   onchange="toggleRecommendationSelection()">
-                            <strong>${rec.action.toUpperCase()}: ${rec.name}</strong><br>
-                            <small>Ad Set: ${rec.ad_set}</small><br>
-                            Reason: ${rec.reason}<br>
-                            Spend: $${rec.spend.toFixed(2)} | 
-                            Bookings: ${rec.bookings.toFixed(1)} | 
-                            CPA: $${rec.cpa.toFixed(2)} | 
-                            ROAS: ${rec.roas.toFixed(2)}
+                const recommendations = data.map(rec => `
+                    <div class="recommendation-card ${rec.action}">
+                        <div class="recommendation-header">
+                            <div>
+                                <span class="recommendation-action ${rec.action}">${rec.action}</span>
+                                <span class="priority-badge ${rec.priority}">${rec.priority}</span>
+                                <small style="color: #6c757d; margin-left: 10px;">Rule: ${rec.rule || 'N/A'}</small>
+                            </div>
                         </div>
-                    `;
-                });
+                        <h4 style="margin-bottom: 10px;">${rec.name}</h4>
+                        <p style="color: #6c757d; margin-bottom: 10px;">${rec.ad_set}</p>
+                        <p style="margin-bottom: 15px;">${rec.reason}</p>
+                        <div style="display: flex; gap: 20px; font-size: 0.9rem; color: #495057; flex-wrap: wrap;">
+                            <span><strong>Spend:</strong> $${rec.spend.toFixed(2)}</span>
+                            <span><strong>ROAS:</strong> ${rec.roas.toFixed(2)}</span>
+                            <span><strong>CPA:</strong> $${rec.cpa.toFixed(2)}</span>
+                            <span><strong>CTR:</strong> ${rec.ctr.toFixed(2)}%</span>
+                            <span><strong>Bookings:</strong> ${rec.bookings.toFixed(0)}</span>
+                        </div>
+                    </div>
+                `).join('');
                 
-                content.innerHTML = html;
+                recommendationsGrid.innerHTML = recommendations;
             } catch (error) {
                 console.error('Error loading optimization recommendations:', error);
-                document.getElementById('optimization-content').innerHTML = 
-                    '<div class="loading">Error loading recommendations.</div>';
-            }
-        }
-        
-        // Toggle recommendation selection
-        function toggleRecommendationSelection() {
-            const checkboxes = document.querySelectorAll('.recommendation-checkbox:checked');
-            const selectedActions = document.getElementById('selected-actions');
-            
-            if (checkboxes.length > 0) {
-                selectedActions.style.display = 'block';
-            } else {
-                selectedActions.style.display = 'none';
-            }
-        }
-        
-        // Execute selected actions
-        function executeSelectedActions() {
-            const checkboxes = document.querySelectorAll('.recommendation-checkbox:checked');
-            if (checkboxes.length === 0) {
-                alert('No actions selected.');
-                return;
-            }
-            
-            if (confirm(`Execute ${checkboxes.length} selected optimization actions?`)) {
-                alert('Optimization actions would be executed via Facebook API (demo mode).');
-                clearSelections();
-            }
-        }
-        
-        // Clear selections
-        function clearSelections() {
-            document.querySelectorAll('.recommendation-checkbox').forEach(cb => cb.checked = false);
-            document.getElementById('selected-actions').style.display = 'none';
-        }
-        
-        // Generate creative brief
-        async function generateCreativeBrief() {
-            const campaignName = document.getElementById('campaign-name').value || 'New Campaign';
-            const campaignType = document.getElementById('campaign-type').value;
-            const messagingPillar = document.getElementById('messaging-pillar').value;
-            const valuePillar = document.getElementById('value-pillar').value;
-            
-            try {
-                const response = await fetch(`/api/creative-brief?name=${encodeURIComponent(campaignName)}&type=${campaignType}&messaging_pillar=${messagingPillar}&value_pillar=${valuePillar}&format=${currentFormat}`);
-                const data = await response.json();
-                
-                document.getElementById('brief-content').innerHTML = `
-                    <div class="insights-content">${data.brief}</div>
-                `;
-            } catch (error) {
-                console.error('Error generating creative brief:', error);
-                document.getElementById('brief-content').innerHTML = 
-                    '<div class="insights-content">Error generating creative brief.</div>';
+                document.getElementById('recommendationsGrid').innerHTML = '<div class="loading">Error loading recommendations</div>';
             }
         }
         
         // Generate AI insights
-        async function generateAIInsights(type) {
-            document.getElementById('insights-content').innerHTML = 
-                '<div class="loading">Generating AI insights...</div>';
+        async function generateInsights(type) {
+            const insightsContent = document.getElementById('insightsContent');
+            insightsContent.innerHTML = 'Generating AI insights...';
             
             try {
                 const response = await fetch(`/api/ai-insights?type=${type}`);
                 const data = await response.json();
-                
-                document.getElementById('insights-content').innerHTML = `
-                    <div class="insights-content">${data.insights}</div>
-                `;
+                insightsContent.innerHTML = data.insights;
             } catch (error) {
-                console.error('Error generating AI insights:', error);
-                document.getElementById('insights-content').innerHTML = 
-                    '<div class="insights-content">Error generating AI insights.</div>';
+                console.error('Error generating insights:', error);
+                insightsContent.innerHTML = 'Error generating insights. Please try again.';
             }
         }
         
-        // Load automation status
-        function loadAutomationStatus() {
-            document.getElementById('automation-status').innerHTML = `
-                <div class="insights-content">
-                    Automation Status: Active
-                    
-                    • Data Refresh: Every 12 hours
-                    • Google Sheets: Connected ✅
-                    • Facebook API: Connected ✅
-                    • OpenAI API: Connected ✅
-                    
-                    Last Update: ${new Date().toLocaleString()}
-                </div>
-            `;
+        // Generate creative brief
+        async function generateCreativeBrief() {
+            const campaignName = document.getElementById('campaignName').value;
+            const campaignType = document.getElementById('campaignType').value;
+            const messagingPillar = document.getElementById('messagingPillar').value;
+            const valuePillar = document.getElementById('valuePillar').value;
+            const creativeFormat = document.getElementById('creativeFormat').value;
+            
+            const briefContent = document.getElementById('briefContent');
+            briefContent.innerHTML = 'Generating creative brief...';
+            
+            try {
+                const response = await fetch(`/api/creative-brief?name=${encodeURIComponent(campaignName)}&type=${campaignType}&messaging_pillar=${messagingPillar}&value_pillar=${valuePillar}&format=${creativeFormat}`);
+                const data = await response.json();
+                briefContent.innerHTML = data.brief;
+            } catch (error) {
+                console.error('Error generating creative brief:', error);
+                briefContent.innerHTML = 'Error generating creative brief. Please try again.';
+            }
         }
         
-        // Refresh all data
-        async function refreshAllData() {
+        // Load automation settings
+        async function loadAutomationSettings() {
+            await loadKpiSettings();
+            await loadOptimizationRules();
+            updateSettingsSummary();
+        }
+        
+        // Load KPI settings
+        async function loadKpiSettings() {
             try {
-                const response = await fetch('/api/refresh-data');
-                const result = await response.json();
+                const response = await fetch('/api/kpi-settings');
+                const data = await response.json();
                 
-                if (result.status === 'success') {
-                    alert('Data refreshed successfully!');
-                    loadPerformanceData();
+                // Populate KPI form fields
+                document.getElementById('ctrThreshold').value = data.ctr_threshold;
+                document.getElementById('funnelStartThreshold').value = data.funnel_start_threshold;
+                document.getElementById('cpaThreshold').value = data.cpa_threshold;
+                document.getElementById('clicksThreshold').value = data.clicks_threshold;
+                document.getElementById('roasThreshold').value = data.roas_threshold;
+                document.getElementById('cpcThreshold').value = data.cpc_threshold;
+                document.getElementById('cpmThreshold').value = data.cpm_threshold;
+                document.getElementById('bookingConversionThreshold').value = data.booking_conversion_threshold;
+            } catch (error) {
+                console.error('Error loading KPI settings:', error);
+                showAutomationMessage('Error loading KPI settings', 'error');
+            }
+        }
+        
+        // Load optimization rules
+        async function loadOptimizationRules() {
+            try {
+                const response = await fetch('/api/optimization-rules');
+                const data = await response.json();
+                
+                // Populate optimization rules form fields
+                document.getElementById('pauseRoasThreshold').value = data.pause_roas_threshold;
+                document.getElementById('pauseSpendThreshold').value = data.pause_spend_threshold;
+                document.getElementById('pauseCpaThreshold').value = data.pause_cpa_threshold;
+                document.getElementById('pauseCpaSpendThreshold').value = data.pause_cpa_spend_threshold;
+                document.getElementById('pauseCtrThreshold').value = data.pause_ctr_threshold;
+                document.getElementById('pauseCtrSpendThreshold').value = data.pause_ctr_spend_threshold;
+                document.getElementById('pauseNoBookingsThreshold').value = data.pause_no_bookings_threshold;
+                document.getElementById('pauseHighCpcThreshold').value = data.pause_high_cpc_threshold;
+                
+                document.getElementById('scaleRoasThreshold').value = data.scale_roas_threshold;
+                document.getElementById('scaleMinSpendThreshold').value = data.scale_min_spend_threshold;
+                document.getElementById('scaleAllCriteriaRequired').value = data.scale_all_criteria_required.toString();
+                document.getElementById('scaleCtrBonusThreshold').value = data.scale_ctr_bonus_threshold;
+                document.getElementById('scaleCpaBonusThreshold').value = data.scale_cpa_bonus_threshold;
+                document.getElementById('scaleBookingRateThreshold').value = data.scale_booking_rate_threshold;
+                document.getElementById('highPrioritySpendThreshold').value = data.high_priority_spend_threshold;
+                document.getElementById('mediumPrioritySpendThreshold').value = data.medium_priority_spend_threshold;
+            } catch (error) {
+                console.error('Error loading optimization rules:', error);
+                showAutomationMessage('Error loading optimization rules', 'error');
+            }
+        }
+        
+        // Save KPI settings
+        async function saveKpiSettings() {
+            const settings = {
+                ctr_threshold: parseFloat(document.getElementById('ctrThreshold').value),
+                funnel_start_threshold: parseFloat(document.getElementById('funnelStartThreshold').value),
+                cpa_threshold: parseFloat(document.getElementById('cpaThreshold').value),
+                clicks_threshold: parseInt(document.getElementById('clicksThreshold').value),
+                roas_threshold: parseFloat(document.getElementById('roasThreshold').value),
+                cpc_threshold: parseFloat(document.getElementById('cpcThreshold').value),
+                cpm_threshold: parseFloat(document.getElementById('cpmThreshold').value),
+                booking_conversion_threshold: parseFloat(document.getElementById('bookingConversionThreshold').value)
+            };
+            
+            try {
+                const response = await fetch('/api/kpi-settings', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(settings)
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    showAutomationMessage('KPI settings saved successfully! Data has been reprocessed with new criteria.', 'success');
+                    updateSettingsSummary();
+                    
+                    // Refresh performance data if on dashboard tab
+                    if (document.getElementById('dashboard').classList.contains('active')) {
+                        loadPerformanceData();
+                    }
                 } else {
-                    alert('Error refreshing data: ' + result.message);
+                    showAutomationMessage(data.message, 'error');
                 }
             } catch (error) {
-                console.error('Error refreshing data:', error);
-                alert('Error refreshing data.');
+                console.error('Error saving KPI settings:', error);
+                showAutomationMessage('Error saving KPI settings', 'error');
             }
         }
         
-        // Test OpenAI
-        async function testOpenAI() {
-            try {
-                const response = await fetch('/api/test-openai');
-                const result = await response.json();
+        // Save optimization rules
+        async function saveOptimizationRules() {
+            const rules = {
+                pause_roas_threshold: parseFloat(document.getElementById('pauseRoasThreshold').value),
+                pause_spend_threshold: parseFloat(document.getElementById('pauseSpendThreshold').value),
+                pause_cpa_threshold: parseFloat(document.getElementById('pauseCpaThreshold').value),
+                pause_cpa_spend_threshold: parseFloat(document.getElementById('pauseCpaSpendThreshold').value),
+                pause_ctr_threshold: parseFloat(document.getElementById('pauseCtrThreshold').value),
+                pause_ctr_spend_threshold: parseFloat(document.getElementById('pauseCtrSpendThreshold').value),
+                pause_no_bookings_threshold: parseFloat(document.getElementById('pauseNoBookingsThreshold').value),
+                pause_high_cpc_threshold: parseFloat(document.getElementById('pauseHighCpcThreshold').value),
                 
-                document.getElementById('api-test-results').innerHTML = `
-                    <div class="insights-content">
-                        OpenAI Test: ${result.status === 'success' ? '✅' : '❌'}
-                        Message: ${result.message}
-                    </div>
-                `;
+                scale_roas_threshold: parseFloat(document.getElementById('scaleRoasThreshold').value),
+                scale_min_spend_threshold: parseFloat(document.getElementById('scaleMinSpendThreshold').value),
+                scale_all_criteria_required: document.getElementById('scaleAllCriteriaRequired').value === 'true',
+                scale_ctr_bonus_threshold: parseFloat(document.getElementById('scaleCtrBonusThreshold').value),
+                scale_cpa_bonus_threshold: parseFloat(document.getElementById('scaleCpaBonusThreshold').value),
+                scale_booking_rate_threshold: parseFloat(document.getElementById('scaleBookingRateThreshold').value),
+                high_priority_spend_threshold: parseFloat(document.getElementById('highPrioritySpendThreshold').value),
+                medium_priority_spend_threshold: parseFloat(document.getElementById('mediumPrioritySpendThreshold').value)
+            };
+            
+            try {
+                const response = await fetch('/api/optimization-rules', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(rules)
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    showAutomationMessage('Optimization rules saved successfully! Recommendations will use new rules.', 'success');
+                    updateSettingsSummary();
+                    
+                    // Refresh optimization recommendations if on that tab
+                    if (document.getElementById('optimization').classList.contains('active')) {
+                        loadOptimizationRecommendations();
+                    }
+                } else {
+                    showAutomationMessage(data.message, 'error');
+                }
             } catch (error) {
-                console.error('Error testing OpenAI:', error);
+                console.error('Error saving optimization rules:', error);
+                showAutomationMessage('Error saving optimization rules', 'error');
             }
         }
         
-        // Test Facebook API
-        async function testFacebook() {
+        // Reset KPI settings
+        async function resetKpiSettings() {
+            if (!confirm('Are you sure you want to reset all KPI settings to defaults?')) {
+                return;
+            }
+            
             try {
-                const response = await fetch('/api/test-facebook');
-                const result = await response.json();
+                const response = await fetch('/api/kpi-settings/reset', {
+                    method: 'POST'
+                });
                 
-                document.getElementById('api-test-results').innerHTML = `
-                    <div class="insights-content">
-                        Facebook API Test: ${result.status === 'success' ? '✅' : '❌'}
-                        Message: ${result.message}
-                    </div>
-                `;
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    showAutomationMessage('KPI settings reset to defaults! Data has been reprocessed.', 'success');
+                    loadKpiSettings();
+                    updateSettingsSummary();
+                    
+                    // Refresh performance data if on dashboard tab
+                    if (document.getElementById('dashboard').classList.contains('active')) {
+                        loadPerformanceData();
+                    }
+                } else {
+                    showAutomationMessage(data.message, 'error');
+                }
             } catch (error) {
-                console.error('Error testing Facebook API:', error);
+                console.error('Error resetting KPI settings:', error);
+                showAutomationMessage('Error resetting KPI settings', 'error');
+            }
+        }
+        
+        // Reset optimization rules
+        async function resetOptimizationRules() {
+            if (!confirm('Are you sure you want to reset all optimization rules to defaults?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/optimization-rules/reset', {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    showAutomationMessage('Optimization rules reset to defaults!', 'success');
+                    loadOptimizationRules();
+                    updateSettingsSummary();
+                    
+                    // Refresh optimization recommendations if on that tab
+                    if (document.getElementById('optimization').classList.contains('active')) {
+                        loadOptimizationRecommendations();
+                    }
+                } else {
+                    showAutomationMessage(data.message, 'error');
+                }
+            } catch (error) {
+                console.error('Error resetting optimization rules:', error);
+                showAutomationMessage('Error resetting optimization rules', 'error');
+            }
+        }
+        
+        // Show automation status message
+        function showAutomationMessage(message, type) {
+            const messageDiv = document.getElementById('automationStatusMessage');
+            messageDiv.innerHTML = `<div class="status-message ${type}">${message}</div>`;
+            
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                messageDiv.innerHTML = '';
+            }, 5000);
+        }
+        
+        // Update settings summary
+        async function updateSettingsSummary() {
+            try {
+                const [kpiResponse, rulesResponse] = await Promise.all([
+                    fetch('/api/kpi-settings'),
+                    fetch('/api/optimization-rules')
+                ]);
+                
+                const kpiData = await kpiResponse.json();
+                const rulesData = await rulesResponse.json();
+                
+                const summary = `
+🎯 SUCCESS CRITERIA KPI THRESHOLDS:
+• CTR > ${kpiData.ctr_threshold}%
+• Funnel Start Rate > ${kpiData.funnel_start_threshold}%
+• CPA < $${kpiData.cpa_threshold}
+• Clicks > ${kpiData.clicks_threshold.toLocaleString()}
+• ROAS > ${kpiData.roas_threshold}
+• CPC < $${kpiData.cpc_threshold}
+• CPM < $${kpiData.cpm_threshold}
+• Booking Conversion Rate > ${kpiData.booking_conversion_threshold}%
+
+🛑 PAUSE RULES:
+• ROAS < ${rulesData.pause_roas_threshold} (spend > $${rulesData.pause_spend_threshold})
+• CPA > $${rulesData.pause_cpa_threshold} (spend > $${rulesData.pause_cpa_spend_threshold})
+• CTR < ${rulesData.pause_ctr_threshold}% (spend > $${rulesData.pause_ctr_spend_threshold})
+• No bookings (spend > $${rulesData.pause_no_bookings_threshold})
+• CPC > $${rulesData.pause_high_cpc_threshold} (spend > $${rulesData.pause_high_cpc_spend_threshold})
+
+📈 SCALE RULES:
+• ROAS > ${rulesData.scale_roas_threshold} (${rulesData.scale_all_criteria_required ? 'all criteria required' : 'ROAS sufficient'})
+• CTR > ${rulesData.scale_ctr_bonus_threshold}% (exceptional performance bonus)
+• CPA < $${rulesData.scale_cpa_bonus_threshold} (low CPA bonus)
+• Booking Rate > ${rulesData.scale_booking_rate_threshold}% (high conversion bonus)
+• Min spend: $${rulesData.scale_min_spend_threshold}
+
+⚡ PRIORITY THRESHOLDS:
+• High Priority: $${rulesData.high_priority_spend_threshold}+
+• Medium Priority: $${rulesData.medium_priority_spend_threshold}+
+                `.trim();
+                
+                document.getElementById('settingsSummary').textContent = summary;
+            } catch (error) {
+                console.error('Error updating settings summary:', error);
+                document.getElementById('settingsSummary').textContent = 'Error loading settings summary';
             }
         }
         
         // Initialize dashboard
         document.addEventListener('DOMContentLoaded', function() {
-            loadPerformanceData();
+            loadPerformanceSummary();
         });
     </script>
 </body>
