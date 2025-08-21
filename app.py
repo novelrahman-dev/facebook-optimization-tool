@@ -10,6 +10,8 @@ import io
 from datetime import datetime, timedelta
 import time
 from collections import defaultdict
+import threading
+import pickle
 
 app = Flask(__name__)
 CORS(app)
@@ -20,6 +22,18 @@ class FacebookOptimizationTool:
         self.fb_access_token = os.getenv('FB_ACCESS_TOKEN')
         self.fb_ad_account_id = os.getenv('FB_AD_ACCOUNT_ID')
         self.google_credentials = os.getenv('GOOGLE_CREDENTIALS_JSON')
+        
+        # Data loading status
+        self.loading_status = {
+            'google_sheets_loaded': False,
+            'facebook_api_loading': False,
+            'facebook_api_loaded': False,
+            'data_processed': False,
+            'total_ads_loaded': 0,
+            'current_page': 0,
+            'error_message': None,
+            'last_updated': None
+        }
         
         # Initialize KPI settings with defaults
         self.kpi_settings = {
@@ -67,13 +81,15 @@ class FacebookOptimizationTool:
         self.init_google_sheets()
         self.init_facebook_api()
         
-        # Load data
+        # Initialize data containers
         self.performance_data = []
         self.web_data = []
         self.attr_data = []
         self.fb_data = []
         self.fb_api_data = []
-        self.load_data()
+        
+        # Start background data loading
+        self.start_background_loading()
         
         print("✅ Facebook Optimization Tool initialized")
 
@@ -156,21 +172,67 @@ class FacebookOptimizationTool:
         except Exception as e:
             print(f"❌ Facebook API error: {e}")
 
-    def load_data(self):
-        """Load data from all sources"""
+    def start_background_loading(self):
+        """Start background data loading in a separate thread"""
+        def background_load():
+            try:
+                # Load Google Sheets data first (fast)
+                self.load_google_sheets_data()
+                self.loading_status['google_sheets_loaded'] = True
+                
+                # Try to load cached Facebook data first
+                if self.load_cached_facebook_data():
+                    print("✅ Loaded Facebook data from cache")
+                    self.loading_status['facebook_api_loaded'] = True
+                    self.process_combined_data()
+                    self.loading_status['data_processed'] = True
+                    self.loading_status['last_updated'] = datetime.now().isoformat()
+                else:
+                    # Load fresh Facebook API data in background
+                    self.load_facebook_api_data_background()
+                
+            except Exception as e:
+                print(f"❌ Background loading error: {e}")
+                self.loading_status['error_message'] = str(e)
+        
+        # Start background thread
+        thread = threading.Thread(target=background_load, daemon=True)
+        thread.start()
+
+    def load_cached_facebook_data(self):
+        """Load Facebook data from cache if available and recent"""
         try:
-            # Load Google Sheets data
-            self.load_google_sheets_data()
-            
-            # Load Facebook API data with unlimited pagination
-            self.load_facebook_api_data()
-            
-            # Process and combine data
-            self.process_combined_data()
-            
-            print("✅ Data loaded successfully")
+            cache_file = '/tmp/facebook_api_cache.pkl'
+            if os.path.exists(cache_file):
+                # Check if cache is recent (less than 1 hour old)
+                cache_age = time.time() - os.path.getmtime(cache_file)
+                if cache_age < 3600:  # 1 hour
+                    with open(cache_file, 'rb') as f:
+                        cached_data = pickle.load(f)
+                        self.fb_api_data = cached_data.get('fb_api_data', [])
+                        self.loading_status['total_ads_loaded'] = len(self.fb_api_data)
+                        print(f"✅ Loaded {len(self.fb_api_data)} ads from cache")
+                        return True
+                else:
+                    print("⚠️ Cache is too old, will refresh")
+            return False
         except Exception as e:
-            print(f"❌ Data loading error: {e}")
+            print(f"⚠️ Error loading cache: {e}")
+            return False
+
+    def save_facebook_data_cache(self):
+        """Save Facebook data to cache"""
+        try:
+            cache_file = '/tmp/facebook_api_cache.pkl'
+            cache_data = {
+                'fb_api_data': self.fb_api_data,
+                'timestamp': datetime.now().isoformat()
+            }
+            with open(cache_file, 'wb') as f:
+                pickle.dump(cache_data, f)
+            print("✅ Facebook data cached successfully")
+        except Exception as e:
+            print(f"⚠️ Error saving cache: {e}")
 
     def load_google_sheets_data(self):
         """Load data from Google Sheets"""
@@ -203,12 +265,14 @@ class FacebookOptimizationTool:
         except Exception as e:
             print(f"❌ Google Sheets loading error: {e}")
 
-    def load_facebook_api_data(self):
-        """Load marketing metrics from Facebook API with unlimited pagination"""
+    def load_facebook_api_data_background(self):
+        """Load marketing metrics from Facebook API in background with progress tracking"""
         try:
             if not self.fb_access_token or not self.fb_ad_account_id:
                 print("⚠️ Facebook API credentials not available")
                 return
+            
+            self.loading_status['facebook_api_loading'] = True
             
             # Use full date range
             since_date = "2025-06-01"
@@ -219,9 +283,9 @@ class FacebookOptimizationTool:
             all_ads_data = []
             after_cursor = None
             page_count = 0
+            max_pages = 50  # Reasonable limit to prevent infinite loading
             
-            # Remove artificial page limit - continue until no more data
-            while True:
+            while page_count < max_pages:
                 try:
                     # Facebook API endpoint for ads with insights
                     url = f"https://graph.facebook.com/v18.0/{self.fb_ad_account_id}/ads"
@@ -233,7 +297,7 @@ class FacebookOptimizationTool:
                             'since': since_date,
                             'until': until_date
                         }),
-                        'limit': 50,  # Increased page size to reduce API calls
+                        'limit': 25,  # Smaller page size for more frequent updates
                         'level': 'ad'
                     }
                     
@@ -241,9 +305,10 @@ class FacebookOptimizationTool:
                         params['after'] = after_cursor
                     
                     page_count += 1
+                    self.loading_status['current_page'] = page_count
                     print(f"📡 Fetching page {page_count} from Facebook API...")
                     
-                    response = requests.get(url, params=params, timeout=30)
+                    response = requests.get(url, params=params, timeout=15)  # Shorter timeout
                     
                     if response.status_code == 200:
                         data = response.json()
@@ -254,7 +319,15 @@ class FacebookOptimizationTool:
                             break
                         
                         all_ads_data.extend(ads_data)
+                        self.loading_status['total_ads_loaded'] = len(all_ads_data)
                         print(f"✅ Loaded {len(ads_data)} ads from page {page_count} (Total: {len(all_ads_data)})")
+                        
+                        # Process data incrementally every 5 pages
+                        if page_count % 5 == 0:
+                            self.process_facebook_data_chunk(all_ads_data)
+                            self.process_combined_data()
+                            self.loading_status['data_processed'] = True
+                            print(f"🔄 Processed {len(all_ads_data)} ads so far...")
                         
                         # Check for next page
                         paging = data.get('paging', {})
@@ -266,16 +339,18 @@ class FacebookOptimizationTool:
                             break
                         
                         # Add delay to respect rate limits
-                        time.sleep(0.3)
+                        time.sleep(0.5)
                         
                     elif response.status_code == 400:
                         error_data = response.json()
                         error_message = error_data.get('error', {}).get('message', 'Unknown error')
                         print(f"❌ Facebook API error: {response.status_code} - {error_message}")
+                        self.loading_status['error_message'] = error_message
                         break
                     
                     else:
                         print(f"❌ Facebook API error: {response.status_code} - {response.text}")
+                        self.loading_status['error_message'] = f"API error: {response.status_code}"
                         break
                         
                 except requests.exceptions.Timeout:
@@ -284,9 +359,32 @@ class FacebookOptimizationTool:
                     continue
                 except Exception as e:
                     print(f"❌ Facebook API request error: {e}")
+                    self.loading_status['error_message'] = str(e)
                     break
             
-            # Process the collected ads data
+            # Final processing
+            self.process_facebook_data_chunk(all_ads_data)
+            self.process_combined_data()
+            
+            # Save to cache
+            self.save_facebook_data_cache()
+            
+            # Update status
+            self.loading_status['facebook_api_loading'] = False
+            self.loading_status['facebook_api_loaded'] = True
+            self.loading_status['data_processed'] = True
+            self.loading_status['last_updated'] = datetime.now().isoformat()
+            
+            print(f"✅ Facebook API loading complete - {len(all_ads_data)} total ads loaded")
+                
+        except Exception as e:
+            print(f"❌ Facebook API loading error: {e}")
+            self.loading_status['facebook_api_loading'] = False
+            self.loading_status['error_message'] = str(e)
+
+    def process_facebook_data_chunk(self, all_ads_data):
+        """Process Facebook API data chunk"""
+        try:
             fb_api_records = []
             for ad in all_ads_data:
                 try:
@@ -328,11 +426,9 @@ class FacebookOptimizationTool:
                     continue
             
             self.fb_api_data = fb_api_records
-            print(f"✅ Processed {len(fb_api_records)} ads from Facebook API (loaded {len(all_ads_data)} total ads)")
-                
+            
         except Exception as e:
-            print(f"❌ Facebook API loading error: {e}")
-            self.fb_api_data = []
+            print(f"❌ Error processing Facebook data chunk: {e}")
 
     def safe_float(self, value, default=0):
         """Safely convert value to float"""
@@ -1167,12 +1263,45 @@ class FacebookOptimizationTool:
         except Exception as e:
             return f"Error generating AI insights: {str(e)}"
 
+    def refresh_data(self):
+        """Refresh all data sources"""
+        try:
+            # Clear cache to force fresh load
+            cache_file = '/tmp/facebook_api_cache.pkl'
+            if os.path.exists(cache_file):
+                os.remove(cache_file)
+            
+            # Reset loading status
+            self.loading_status = {
+                'google_sheets_loaded': False,
+                'facebook_api_loading': False,
+                'facebook_api_loaded': False,
+                'data_processed': False,
+                'total_ads_loaded': 0,
+                'current_page': 0,
+                'error_message': None,
+                'last_updated': None
+            }
+            
+            # Start fresh background loading
+            self.start_background_loading()
+            
+            return True
+        except Exception as e:
+            print(f"❌ Error refreshing data: {e}")
+            return False
+
 # Initialize the tool
 tool = FacebookOptimizationTool()
 
 @app.route('/')
 def dashboard():
     return render_template('enhanced_dashboard.html')
+
+@app.route('/api/loading-status')
+def loading_status():
+    """Get current data loading status"""
+    return jsonify(tool.loading_status)
 
 @app.route('/api/performance-summary')
 def performance_summary():
@@ -1508,8 +1637,11 @@ def reset_optimization_rules():
 @app.route('/api/refresh-data')
 def refresh_data():
     try:
-        tool.load_data()
-        return jsonify({'status': 'success', 'message': 'Data refreshed successfully'})
+        success = tool.refresh_data()
+        if success:
+            return jsonify({'status': 'success', 'message': 'Data refresh started in background'})
+        else:
+            return jsonify({'status': 'error', 'message': 'Failed to start data refresh'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)})
 
