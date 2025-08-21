@@ -25,11 +25,12 @@ class FacebookOptimizationTool:
     def setup_apis(self):
         """Initialize API clients"""
         try:
-            # OpenAI API (updated for new version)
+            # OpenAI API (simplified initialization)
             api_key = os.getenv('OPENAI_API_KEY')
-            if api_key:
+            if api_key and api_key.startswith('sk-'):
                 try:
                     from openai import OpenAI
+                    # Simple initialization without extra parameters
                     self.openai_client = OpenAI(api_key=api_key)
                     print("✅ OpenAI API client initialized")
                 except ImportError:
@@ -37,10 +38,15 @@ class FacebookOptimizationTool:
                     self.openai_client = None
                 except Exception as e:
                     print(f"❌ OpenAI client error: {e}")
-                    self.openai_client = None
+                    # Try alternative initialization
+                    try:
+                        self.openai_client = OpenAI()  # Use environment variable directly
+                        print("✅ OpenAI API client initialized (alternative method)")
+                    except:
+                        self.openai_client = None
             else:
                 self.openai_client = None
-                print("⚠️ OpenAI API key not found")
+                print("⚠️ OpenAI API key not found or invalid format")
             
             # Google Sheets API
             self.setup_google_sheets()
@@ -100,6 +106,7 @@ class FacebookOptimizationTool:
     def load_sample_data(self):
         """Load sample data for demonstration"""
         # Create sample performance data
+        np.random.seed(42)  # For consistent sample data
         sample_data = {
             'ad_name': [f'Sample_Ad_{i}' for i in range(1, 21)],
             'ad_set_name': [f'Sample_AdSet_{i//4}' for i in range(1, 21)],
@@ -178,12 +185,32 @@ class FacebookOptimizationTool:
         
         return recommendations
     
+    def test_openai_connection(self):
+        """Test OpenAI connection"""
+        try:
+            if self.openai_client:
+                # Simple test call
+                response = self.openai_client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[{"role": "user", "content": "Hello, this is a test."}],
+                    max_tokens=10
+                )
+                return True
+            return False
+        except Exception as e:
+            print(f"OpenAI test failed: {e}")
+            return False
+    
     def generate_ai_insights(self, insight_type='cluster'):
         """Generate AI-powered insights using OpenAI"""
         try:
-            # Check if OpenAI client is available
-            if not hasattr(self, 'openai_client') or self.openai_client is None:
+            # Check if OpenAI client is available and working
+            if not self.openai_client:
                 return "OpenAI API not configured. Please add your OPENAI_API_KEY environment variable and restart the application."
+            
+            # Test connection first
+            if not self.test_openai_connection():
+                return "OpenAI API connection failed. Please check your API key and try again."
             
             if insight_type == 'cluster':
                 prompt = f"""
@@ -235,13 +262,23 @@ class FacebookOptimizationTool:
         """Generate AI-enhanced creative brief"""
         try:
             # Check if OpenAI client is available
-            if not hasattr(self, 'openai_client') or self.openai_client is None:
+            if not self.openai_client:
                 return {
                     'campaign_name': campaign_name,
                     'campaign_type': campaign_type,
                     'generated_at': datetime.now().isoformat(),
                     'error': 'OpenAI API not configured',
                     'ai_content': 'Please add your OPENAI_API_KEY environment variable and restart the application to enable AI features.'
+                }
+            
+            # Test connection first
+            if not self.test_openai_connection():
+                return {
+                    'campaign_name': campaign_name,
+                    'campaign_type': campaign_type,
+                    'generated_at': datetime.now().isoformat(),
+                    'error': 'OpenAI API connection failed',
+                    'ai_content': 'OpenAI API connection failed. Please check your API key and try again.'
                 }
             
             # Get performance insights
@@ -444,6 +481,24 @@ def toggle_automation():
         'auto_refresh_enabled': True,
         'message': 'Automation is always enabled in this version'
     })
+
+@app.route('/api/test-openai')
+def test_openai():
+    """Test OpenAI connection"""
+    try:
+        if tool.openai_client:
+            success = tool.test_openai_connection()
+            return jsonify({
+                'status': 'success' if success else 'failed',
+                'message': 'OpenAI connection working' if success else 'OpenAI connection failed'
+            })
+        else:
+            return jsonify({
+                'status': 'failed',
+                'message': 'OpenAI client not initialized'
+            })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     # Get port from environment variable (Railway sets this)
