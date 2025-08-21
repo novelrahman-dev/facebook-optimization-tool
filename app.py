@@ -32,7 +32,9 @@ class FacebookOptimizationTool:
             'total_ads_loaded': 0,
             'current_page': 0,
             'error_message': None,
-            'last_updated': None
+            'last_updated': None,
+            'expected_ads': 747,
+            'pagination_complete': False
         }
         
         # Initialize KPI settings with defaults
@@ -204,9 +206,9 @@ class FacebookOptimizationTool:
         try:
             cache_file = '/tmp/facebook_api_cache.pkl'
             if os.path.exists(cache_file):
-                # Check if cache is recent (less than 1 hour old)
+                # Check if cache is recent (less than 30 minutes old)
                 cache_age = time.time() - os.path.getmtime(cache_file)
-                if cache_age < 3600:  # 1 hour
+                if cache_age < 1800:  # 30 minutes
                     with open(cache_file, 'rb') as f:
                         cached_data = pickle.load(f)
                         self.fb_api_data = cached_data.get('fb_api_data', [])
@@ -266,7 +268,7 @@ class FacebookOptimizationTool:
             print(f"❌ Google Sheets loading error: {e}")
 
     def load_facebook_api_data_background(self):
-        """Load marketing metrics from Facebook API in background with progress tracking"""
+        """Load marketing metrics from Facebook API in background with unlimited pagination"""
         try:
             if not self.fb_access_token or not self.fb_ad_account_id:
                 print("⚠️ Facebook API credentials not available")
@@ -276,29 +278,39 @@ class FacebookOptimizationTool:
             
             # Use full date range
             since_date = "2025-06-01"
-            until_date = datetime.now().strftime("%Y-%m-%d")
+            until_date = "2025-08-20"
             
             print(f"🔄 Loading Facebook API data from {since_date} to {until_date}")
+            print(f"🎯 Target: Load all 747 ads with spend data")
             
             all_ads_data = []
             after_cursor = None
             page_count = 0
-            max_pages = 50  # Reasonable limit to prevent infinite loading
+            consecutive_empty_pages = 0
+            max_consecutive_empty = 3  # Stop after 3 consecutive empty pages
             
-            while page_count < max_pages:
+            # Remove artificial page limits - continue until no more data
+            while consecutive_empty_pages < max_consecutive_empty:
                 try:
                     # Facebook API endpoint for ads with insights
                     url = f"https://graph.facebook.com/v18.0/{self.fb_ad_account_id}/ads"
                     
                     params = {
                         'access_token': self.fb_access_token,
-                        'fields': 'name,adset{name},insights{impressions,clicks,spend}',
+                        'fields': 'id,name,adset{id,name},insights{impressions,clicks,spend,ctr,cpc,cpm}',
                         'time_range': json.dumps({
                             'since': since_date,
                             'until': until_date
                         }),
-                        'limit': 25,  # Smaller page size for more frequent updates
-                        'level': 'ad'
+                        'limit': 50,  # Larger page size for efficiency
+                        'level': 'ad',
+                        'filtering': json.dumps([
+                            {
+                                'field': 'delivery_info',
+                                'operator': 'IN',
+                                'value': ['active', 'paused', 'pending_review', 'disapproved', 'preapproved', 'pending_billing_info', 'campaign_paused', 'adset_paused', 'archived']
+                            }
+                        ])
                     }
                     
                     if after_cursor:
@@ -308,22 +320,35 @@ class FacebookOptimizationTool:
                     self.loading_status['current_page'] = page_count
                     print(f"📡 Fetching page {page_count} from Facebook API...")
                     
-                    response = requests.get(url, params=params, timeout=15)  # Shorter timeout
+                    response = requests.get(url, params=params, timeout=30)
                     
                     if response.status_code == 200:
                         data = response.json()
                         ads_data = data.get('data', [])
                         
                         if not ads_data:
-                            print("📄 No more ads data available")
-                            break
+                            consecutive_empty_pages += 1
+                            print(f"📄 Empty page {page_count} (consecutive empty: {consecutive_empty_pages})")
+                            
+                            # Check for next page even if current page is empty
+                            paging = data.get('paging', {})
+                            cursors = paging.get('cursors', {})
+                            after_cursor = cursors.get('after')
+                            
+                            if not after_cursor:
+                                print("📄 No more pagination cursors available")
+                                break
+                            
+                            continue
+                        else:
+                            consecutive_empty_pages = 0  # Reset counter on successful page
                         
                         all_ads_data.extend(ads_data)
                         self.loading_status['total_ads_loaded'] = len(all_ads_data)
-                        print(f"✅ Loaded {len(ads_data)} ads from page {page_count} (Total: {len(all_ads_data)})")
+                        print(f"✅ Loaded {len(ads_data)} ads from page {page_count} (Total: {len(all_ads_data)}/747)")
                         
-                        # Process data incrementally every 5 pages
-                        if page_count % 5 == 0:
+                        # Process data incrementally every 10 pages for better performance
+                        if page_count % 10 == 0:
                             self.process_facebook_data_chunk(all_ads_data)
                             self.process_combined_data()
                             self.loading_status['data_processed'] = True
@@ -338,8 +363,8 @@ class FacebookOptimizationTool:
                             print("📄 Reached end of data - no more pages available")
                             break
                         
-                        # Add delay to respect rate limits
-                        time.sleep(0.5)
+                        # Add small delay to respect rate limits
+                        time.sleep(0.2)
                         
                     elif response.status_code == 400:
                         error_data = response.json()
@@ -373,9 +398,15 @@ class FacebookOptimizationTool:
             self.loading_status['facebook_api_loading'] = False
             self.loading_status['facebook_api_loaded'] = True
             self.loading_status['data_processed'] = True
+            self.loading_status['pagination_complete'] = True
             self.loading_status['last_updated'] = datetime.now().isoformat()
             
             print(f"✅ Facebook API loading complete - {len(all_ads_data)} total ads loaded")
+            
+            if len(all_ads_data) < 747:
+                print(f"⚠️ Expected 747 ads but loaded {len(all_ads_data)} - some ads may not have insights data or may be outside date range")
+            else:
+                print(f"🎯 Successfully loaded all expected ads!")
                 
         except Exception as e:
             print(f"❌ Facebook API loading error: {e}")
@@ -388,8 +419,10 @@ class FacebookOptimizationTool:
             fb_api_records = []
             for ad in all_ads_data:
                 try:
+                    ad_id = ad.get('id', '')
                     ad_name = ad.get('name', '')
                     adset_info = ad.get('adset', {})
+                    adset_id = adset_info.get('id', '') if adset_info else ''
                     adset_name = adset_info.get('name', '') if adset_info else ''
                     insights = ad.get('insights', {}).get('data', [])
                     
@@ -410,8 +443,9 @@ class FacebookOptimizationTool:
                         cpm = total_spend / total_impressions * 1000 if total_impressions > 0 else 0
                         
                         fb_api_records.append({
-                            'ad_id': ad.get('id', ''),
+                            'ad_id': ad_id,
                             'ad_name': ad_name,
+                            'adset_id': adset_id,
                             'adset_name': adset_name,
                             'impressions': total_impressions,
                             'clicks': total_clicks,
@@ -419,6 +453,20 @@ class FacebookOptimizationTool:
                             'ctr': ctr,
                             'cpc': cpc,
                             'cpm': cpm
+                        })
+                    else:
+                        # Include ads without insights data (they might have spend in Google Sheets)
+                        fb_api_records.append({
+                            'ad_id': ad_id,
+                            'ad_name': ad_name,
+                            'adset_id': adset_id,
+                            'adset_name': adset_name,
+                            'impressions': 0,
+                            'clicks': 0,
+                            'spend': 0,
+                            'ctr': 0,
+                            'cpc': 0,
+                            'cpm': 0
                         })
                         
                 except Exception as e:
@@ -1280,7 +1328,9 @@ class FacebookOptimizationTool:
                 'total_ads_loaded': 0,
                 'current_page': 0,
                 'error_message': None,
-                'last_updated': None
+                'last_updated': None,
+                'expected_ads': 747,
+                'pagination_complete': False
             }
             
             # Start fresh background loading
