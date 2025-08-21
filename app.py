@@ -268,7 +268,7 @@ class FacebookOptimizationTool:
             print(f"❌ Google Sheets loading error: {e}")
 
     def load_facebook_api_data_background(self):
-        """Load marketing metrics from Facebook API with exact filtering to match Google Sheets"""
+        """Load marketing metrics from Facebook API with exact Ad Set + Ad Name filtering"""
         try:
             if not self.fb_access_token or not self.fb_ad_account_id:
                 print("⚠️ Facebook API credentials not available")
@@ -283,14 +283,18 @@ class FacebookOptimizationTool:
             print(f"🔄 Loading Facebook API data from {since_date} to {until_date}")
             print(f"🎯 Target: Load exactly 747 ads to match Google Sheets")
             
-            # Get list of ad names from Google Sheets to filter Facebook API
-            fb_sheet_ad_names = set()
+            # Get list of Ad Set + Ad Name combinations from Google Sheets
+            fb_sheet_combinations = set()
             for row in self.fb_data:
+                ad_set_name = str(row.get('Facebook Adset Name', '')).strip()
                 ad_name = str(row.get('Facebook Ad Name', '')).strip()
-                if ad_name and ad_name.lower() != 'total':
-                    fb_sheet_ad_names.add(ad_name)
+                if (ad_set_name and ad_name and 
+                    ad_set_name.lower() != 'total' and ad_name.lower() != 'total'):
+                    # Create unique combination key
+                    combination_key = f"{ad_set_name}|||{ad_name}"
+                    fb_sheet_combinations.add(combination_key)
             
-            print(f"📋 Found {len(fb_sheet_ad_names)} unique ad names in Google Sheets")
+            print(f"📋 Found {len(fb_sheet_combinations)} unique Ad Set + Ad Name combinations in Google Sheets")
             
             all_ads_data = []
             after_cursor = None
@@ -337,12 +341,18 @@ class FacebookOptimizationTool:
                             print(f"📄 No more ads available on page {page_count}")
                             break
                         
-                        # Filter ads to only include those in Google Sheets
+                        # Filter ads to only include those in Google Sheets (Ad Set + Ad Name combination)
                         filtered_ads = []
                         for ad in ads_data:
                             ad_name = ad.get('name', '')
-                            if ad_name in fb_sheet_ad_names:
-                                filtered_ads.append(ad)
+                            adset_info = ad.get('adset', {})
+                            adset_name = adset_info.get('name', '') if adset_info else ''
+                            
+                            if ad_name and adset_name:
+                                # Create combination key to match Google Sheets
+                                combination_key = f"{adset_name}|||{ad_name}"
+                                if combination_key in fb_sheet_combinations:
+                                    filtered_ads.append(ad)
                         
                         all_ads_data.extend(filtered_ads)
                         self.loading_status['total_ads_loaded'] = len(all_ads_data)
@@ -495,70 +505,62 @@ class FacebookOptimizationTool:
             return default
 
     def process_combined_data(self):
-        """Process and combine data from all sources"""
+        """Process and combine data from all sources using Ad Set + Ad Name combinations"""
         try:
             combined_data = []
             
             print(f"🔄 Processing data: {len(self.web_data)} web, {len(self.attr_data)} attr, {len(self.fb_data)} fb sheets, {len(self.fb_api_data)} fb api")
             
-            # Create lookup dictionaries
+            # Create lookup dictionaries using Ad Set + Ad Name combinations
             web_lookup = {}
             for row in self.web_data:
                 utm_content = str(row.get('Web Pages UTM Content', '')).strip()
                 utm_term = str(row.get('Web Pages UTM Term', '')).strip()
                 if utm_content and utm_term and utm_content.lower() != 'total' and utm_term.lower() != 'total':
-                    keys = [
-                        f"{utm_term}_{utm_content}",
-                        f"{utm_content}_{utm_term}",
-                        utm_content,
-                        utm_term
-                    ]
-                    for key in keys:
-                        web_lookup[key.lower()] = row
+                    # Create combination key
+                    combination_key = f"{utm_term}|||{utm_content}"
+                    web_lookup[combination_key.lower()] = row
+                    # Also add individual keys for fallback
+                    web_lookup[utm_content.lower()] = row
+                    web_lookup[utm_term.lower()] = row
             
             attr_lookup = {}
             for row in self.attr_data:
                 utm_content = str(row.get('Attribution UTM Content', '')).strip()
                 utm_term = str(row.get('Attribution UTM Term', '')).strip()
                 if utm_content and utm_term and utm_content.lower() != 'total' and utm_term.lower() != 'total':
-                    keys = [
-                        f"{utm_term}_{utm_content}",
-                        f"{utm_content}_{utm_term}",
-                        utm_content,
-                        utm_term
-                    ]
-                    for key in keys:
-                        attr_lookup[key.lower()] = row
+                    # Create combination key
+                    combination_key = f"{utm_term}|||{utm_content}"
+                    attr_lookup[combination_key.lower()] = row
+                    # Also add individual keys for fallback
+                    attr_lookup[utm_content.lower()] = row
+                    attr_lookup[utm_term.lower()] = row
             
-            # Create FB spend lookup (Google Sheets)
+            # Create FB spend lookup using Ad Set + Ad Name combinations
             fb_spend_lookup = {}
             for row in self.fb_data:
                 ad_set_name = str(row.get('Facebook Adset Name', '')).strip()
                 ad_name = str(row.get('Facebook Ad Name', '')).strip()
                 if ad_set_name and ad_name and ad_set_name.lower() != 'total' and ad_name.lower() != 'total':
-                    keys = [
-                        f"{ad_set_name}_{ad_name}",
-                        f"{ad_name}_{ad_set_name}",
-                        ad_name,
-                        ad_set_name
-                    ]
-                    for key in keys:
-                        fb_spend_lookup[key.lower()] = row
+                    # Create combination key
+                    combination_key = f"{ad_set_name}|||{ad_name}"
+                    fb_spend_lookup[combination_key.lower()] = row
+                    # Also add individual keys for fallback
+                    fb_spend_lookup[ad_name.lower()] = row
+                    fb_spend_lookup[ad_set_name.lower()] = row
             
-            # Create FB API lookup (for marketing metrics)
+            # Create FB API lookup using Ad Set + Ad Name combinations
             fb_api_lookup = {}
             for row in self.fb_api_data:
                 ad_set_name = str(row.get('adset_name', '')).strip()
                 ad_name = str(row.get('ad_name', '')).strip()
                 if ad_set_name and ad_name:
-                    keys = [
-                        f"{ad_set_name}_{ad_name}",
-                        f"{ad_name}_{ad_set_name}",
-                        ad_name,
-                        ad_set_name
-                    ]
-                    for key in keys:
-                        fb_api_lookup[key.lower()] = row
+                    # Create combination key
+                    combination_key = f"{ad_set_name}|||{ad_name}"
+                    fb_api_lookup[combination_key.lower()] = row
+                    # Also add individual keys for fallback
+                    fb_api_lookup[ad_name.lower()] = row
+                    fb_api_lookup[ad_set_name.lower()] = row
             
             print(f"🔍 Created lookups: {len(web_lookup)} web, {len(attr_lookup)} attr, {len(fb_spend_lookup)} fb spend, {len(fb_api_lookup)} fb api")
             
@@ -573,35 +575,34 @@ class FacebookOptimizationTool:
                 if not ad_set_name or not ad_name:
                     continue
                 
-                # Try to find matching data with flexible matching
+                # Try to find matching data using Ad Set + Ad Name combination first
                 web_row = {}
                 attr_row = {}
                 fb_spend_row = {}
                 
-                # Try different key combinations
+                # Primary key: Ad Set + Ad Name combination
+                primary_key = f"{ad_set_name}|||{ad_name}".lower()
+                
+                # Try combination key first, then fallback to individual keys
                 search_keys = [
-                    f"{ad_set_name}_{ad_name}",
-                    f"{ad_name}_{ad_set_name}",
-                    ad_name,
-                    ad_set_name
+                    primary_key,
+                    ad_name.lower(),
+                    ad_set_name.lower()
                 ]
                 
                 for key in search_keys:
-                    key_lower = key.lower()
-                    if key_lower in web_lookup:
-                        web_row = web_lookup[key_lower]
+                    if key in web_lookup:
+                        web_row = web_lookup[key]
                         break
                 
                 for key in search_keys:
-                    key_lower = key.lower()
-                    if key_lower in attr_lookup:
-                        attr_row = attr_lookup[key_lower]
+                    if key in attr_lookup:
+                        attr_row = attr_lookup[key]
                         break
                 
                 for key in search_keys:
-                    key_lower = key.lower()
-                    if key_lower in fb_spend_lookup:
-                        fb_spend_row = fb_spend_lookup[key_lower]
+                    if key in fb_spend_lookup:
+                        fb_spend_row = fb_spend_lookup[key]
                         break
                 
                 # Get marketing metrics from Facebook API (accurate)
