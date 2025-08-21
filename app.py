@@ -26,6 +26,9 @@ class FacebookOptimizationTool:
         
         # Load data
         self.performance_data = []
+        self.web_data = []
+        self.attr_data = []
+        self.fb_data = []
         self.load_data()
         
         print("✅ Facebook Optimization Tool initialized")
@@ -76,64 +79,122 @@ class FacebookOptimizationTool:
         try:
             # Web Pages Data
             web_sheet = self.gc.open_by_key('1e_eimaB0WTMOcWalCwSnMGFCZ5fDG1y7jpZF-qBNfdA').sheet1
-            web_data = web_sheet.get_all_records()
-            print(f"✅ Loaded {len(web_data)} rows from web_pages")
+            self.web_data = web_sheet.get_all_records()
+            print(f"✅ Loaded {len(self.web_data)} rows from web_pages")
             
             # Attribution Data
             attr_sheet = self.gc.open_by_key('1k49FsG1hAO3L-CGq1UjBPUxuDA6ZLMX0FCSMJQzmUCQ').sheet1
-            attr_data = attr_sheet.get_all_records()
-            print(f"✅ Loaded {len(attr_data)} rows from attribution")
+            self.attr_data = attr_sheet.get_all_records()
+            print(f"✅ Loaded {len(self.attr_data)} rows from attribution")
             
             # FB Spend Data
             fb_sheet = self.gc.open_by_key('1BG--tds9na-WC3Dx3t0DTuWcmZAVYbBsvWCUJ-yFQTk').sheet1
-            fb_data = fb_sheet.get_all_records()
-            print(f"✅ Loaded {len(fb_data)} rows from fb_spend")
+            self.fb_data = fb_sheet.get_all_records()
+            print(f"✅ Loaded {len(self.fb_data)} rows from fb_spend")
             
             # Process and combine data
-            self.process_combined_data(web_data, attr_data, fb_data)
+            self.process_combined_data()
             
         except Exception as e:
             print(f"❌ Google Sheets loading error: {e}")
             self.load_sample_data()
 
-    def process_combined_data(self, web_data, attr_data, fb_data):
+    def process_combined_data(self):
         """Process and combine data from all sources"""
         try:
             combined_data = []
             
-            # Create lookup dictionaries
+            print(f"🔄 Processing data: {len(self.web_data)} web, {len(self.attr_data)} attr, {len(self.fb_data)} fb")
+            
+            # Create lookup dictionaries with flexible key matching
             web_lookup = {}
-            for row in web_data:
-                if row.get('Web Pages UTM Content') and row.get('Web Pages UTM Term'):
-                    key = f"{row['Web Pages UTM Term']}_{row['Web Pages UTM Content']}"
-                    web_lookup[key] = row
+            for row in self.web_data:
+                utm_content = str(row.get('Web Pages UTM Content', '')).strip()
+                utm_term = str(row.get('Web Pages UTM Term', '')).strip()
+                if utm_content and utm_term and utm_content.lower() != 'total' and utm_term.lower() != 'total':
+                    # Try multiple key formats
+                    keys = [
+                        f"{utm_term}_{utm_content}",
+                        f"{utm_content}_{utm_term}",
+                        utm_content,
+                        utm_term
+                    ]
+                    for key in keys:
+                        web_lookup[key.lower()] = row
             
             attr_lookup = {}
-            for row in attr_data:
-                if row.get('Attribution UTM Content') and row.get('Attribution UTM Term'):
-                    key = f"{row['Attribution UTM Term']}_{row['Attribution UTM Content']}"
-                    attr_lookup[key] = row
+            for row in self.attr_data:
+                utm_content = str(row.get('Attribution UTM Content', '')).strip()
+                utm_term = str(row.get('Attribution UTM Term', '')).strip()
+                if utm_content and utm_term and utm_content.lower() != 'total' and utm_term.lower() != 'total':
+                    # Try multiple key formats
+                    keys = [
+                        f"{utm_term}_{utm_content}",
+                        f"{utm_content}_{utm_term}",
+                        utm_content,
+                        utm_term
+                    ]
+                    for key in keys:
+                        attr_lookup[key.lower()] = row
+            
+            print(f"🔍 Created lookups: {len(web_lookup)} web keys, {len(attr_lookup)} attr keys")
             
             # Process FB data and combine
-            for fb_row in fb_data:
-                if not fb_row.get('Ad Set Name') or not fb_row.get('Ad Name'):
+            processed_count = 0
+            for fb_row in self.fb_data:
+                ad_set_name = str(fb_row.get('Ad Set Name', '')).strip()
+                ad_name = str(fb_row.get('Ad Name', '')).strip()
+                
+                # Skip totals rows and empty rows
+                if not ad_set_name or not ad_name:
                     continue
-                    
-                key = f"{fb_row['Ad Set Name']}_{fb_row['Ad Name']}"
-                web_row = web_lookup.get(key, {})
-                attr_row = attr_lookup.get(key, {})
+                if any(word in ad_set_name.lower() for word in ['total', 'sum', 'grand']):
+                    continue
+                if any(word in ad_name.lower() for word in ['total', 'sum', 'grand']):
+                    continue
+                
+                # Try to find matching data with flexible matching
+                web_row = {}
+                attr_row = {}
+                
+                # Try different key combinations
+                search_keys = [
+                    f"{ad_set_name}_{ad_name}",
+                    f"{ad_name}_{ad_set_name}",
+                    ad_name,
+                    ad_set_name
+                ]
+                
+                for key in search_keys:
+                    key_lower = key.lower()
+                    if key_lower in web_lookup:
+                        web_row = web_lookup[key_lower]
+                        break
+                
+                for key in search_keys:
+                    key_lower = key.lower()
+                    if key_lower in attr_lookup:
+                        attr_row = attr_lookup[key_lower]
+                        break
                 
                 # Calculate KPIs
                 spend = self.safe_float(fb_row.get('Amount Spent (USD)', 0))
                 clicks = self.safe_float(fb_row.get('Link Clicks', 0))
                 impressions = self.safe_float(fb_row.get('Impressions', 0))
+                
+                # Web data
                 site_visits = self.safe_float(web_row.get('Web Pages Unique Count of Landing Pages', 0))
                 funnel_starts = self.safe_float(web_row.get('Web Pages Unique Count of Sessions with Funnel Starts', 0))
+                survey_complete = self.safe_float(web_row.get('Web Pages Unique Count of Sessions with Match Results', 0))
+                checkout_starts = self.safe_float(web_row.get('Count of Sessions with Checkout Started (V2 included)', 0))
+                
+                # Attribution data
                 bookings = self.safe_float(attr_row.get('Attribution Attributed NPRs', 0))
                 revenue = self.safe_float(attr_row.get('Attribution Attibuted Total Revenue (Predicted) (USD)', 0))
                 completion_rate = self.safe_float(attr_row.get('Attribution Attibuted PAS (Predicted)', 0.45))
+                promo_spend = self.safe_float(attr_row.get('Attibuted Offer Spend (Predicted) (USD)', 0))
                 
-                # Apply completion rate failsafe
+                # Apply completion rate failsafe (39%-51% range, default 45%)
                 if completion_rate < 0.39 or completion_rate > 0.51:
                     completion_rate = 0.45
                 
@@ -141,13 +202,16 @@ class FacebookOptimizationTool:
                 ctr = (clicks / impressions * 100) if impressions > 0 else 0
                 cpc = (spend / clicks) if clicks > 0 else 0
                 funnel_start_rate = (funnel_starts / site_visits * 100) if site_visits > 0 else 0
+                survey_completion_rate = (survey_complete / funnel_starts * 100) if funnel_starts > 0 else 0
+                checkout_start_rate = (checkout_starts / survey_complete * 100) if survey_complete > 0 else 0
                 booking_conversion_rate = (bookings / site_visits * 100) if site_visits > 0 else 0
                 cpa = (spend / bookings) if bookings > 0 else 0
                 
-                # Calculate LTV/CAC
+                # Calculate LTV/CAC with completion rate
                 completed_appointments = bookings * completion_rate
+                total_cost = spend + promo_spend
+                cac = (total_cost / completed_appointments) if completed_appointments > 0 else 0
                 ltv = (revenue / completed_appointments) if completed_appointments > 0 else 0
-                cac = (spend / completed_appointments) if completed_appointments > 0 else 0
                 roas = (ltv / cac) if cac > 0 else 0
                 
                 # Success criteria
@@ -159,8 +223,8 @@ class FacebookOptimizationTool:
                 }
                 
                 combined_row = {
-                    'ad_set_name': fb_row['Ad Set Name'],
-                    'ad_name': fb_row['Ad Name'],
+                    'ad_set_name': ad_set_name,
+                    'ad_name': ad_name,
                     'spend': spend,
                     'clicks': clicks,
                     'impressions': impressions,
@@ -169,6 +233,10 @@ class FacebookOptimizationTool:
                     'site_visits': site_visits,
                     'funnel_starts': funnel_starts,
                     'funnel_start_rate': funnel_start_rate,
+                    'survey_complete': survey_complete,
+                    'survey_completion_rate': survey_completion_rate,
+                    'checkout_starts': checkout_starts,
+                    'checkout_start_rate': checkout_start_rate,
                     'bookings': bookings,
                     'booking_conversion_rate': booking_conversion_rate,
                     'cpa': cpa,
@@ -177,15 +245,30 @@ class FacebookOptimizationTool:
                     'cac': cac,
                     'roas': roas,
                     'completion_rate': completion_rate,
+                    'promo_spend': promo_spend,
+                    'total_cost': total_cost,
                     'success_criteria': success_criteria,
-                    'all_criteria_met': all(success_criteria.values())
+                    'all_criteria_met': all(success_criteria.values()),
+                    'has_web_data': bool(web_row),
+                    'has_attr_data': bool(attr_row)
                 }
                 
                 combined_data.append(combined_row)
+                processed_count += 1
             
             self.performance_data = combined_data
-            print(f"✅ Processed {len(combined_data)} combined records")
+            print(f"✅ Processed {processed_count} combined records from {len(self.fb_data)} FB records")
             
+            if processed_count == 0:
+                print("⚠️ No records were successfully combined - checking data format...")
+                # Debug: Print sample data
+                if self.fb_data:
+                    sample_fb = self.fb_data[0]
+                    print(f"📊 Sample FB keys: {list(sample_fb.keys())}")
+                if self.web_data:
+                    sample_web = self.web_data[0]
+                    print(f"📊 Sample Web keys: {list(sample_web.keys())}")
+                
         except Exception as e:
             print(f"❌ Data processing error: {e}")
             self.load_sample_data()
@@ -193,8 +276,11 @@ class FacebookOptimizationTool:
     def safe_float(self, value, default=0):
         """Safely convert value to float"""
         try:
-            if value is None or value == '':
+            if value is None or value == '' or value == 'None':
                 return default
+            # Handle string numbers with commas
+            if isinstance(value, str):
+                value = value.replace(',', '')
             return float(value)
         except (ValueError, TypeError):
             return default
@@ -203,26 +289,64 @@ class FacebookOptimizationTool:
         """Load sample data for testing"""
         self.performance_data = [
             {
-                'ad_set_name': 'Sample Ad Set 1',
-                'ad_name': 'Sample Ad 1',
-                'spend': 1000,
-                'clicks': 150,
-                'impressions': 20000,
-                'ctr': 0.75,
-                'cpc': 6.67,
-                'site_visits': 120,
-                'funnel_starts': 25,
-                'funnel_start_rate': 20.83,
-                'bookings': 5,
-                'booking_conversion_rate': 4.17,
-                'cpa': 200,
-                'revenue': 1500,
+                'ad_set_name': '071425_CEO_AppointmentPage_Calgary_Amazon_130_EngagedShoppers_Video_Feed-Stories-Reels_EXP-InsuranceLP',
+                'ad_name': '070325_$130_Static_Amazon_PrimeDay_Batch33_V7_NF',
+                'spend': 1500,
+                'clicks': 250,
+                'impressions': 35000,
+                'ctr': 0.71,
+                'cpc': 6.00,
+                'site_visits': 200,
+                'funnel_starts': 40,
+                'funnel_start_rate': 20.0,
+                'survey_complete': 30,
+                'survey_completion_rate': 75.0,
+                'checkout_starts': 25,
+                'checkout_start_rate': 83.3,
+                'bookings': 8,
+                'booking_conversion_rate': 4.0,
+                'cpa': 187.50,
+                'revenue': 2400,
                 'ltv': 666.67,
-                'cac': 444.44,
-                'roas': 1.5,
+                'cac': 416.67,
+                'roas': 1.6,
                 'completion_rate': 0.45,
+                'promo_spend': 120,
+                'total_cost': 1620,
                 'success_criteria': {'ctr_good': True, 'funnel_start_good': True, 'cpa_good': False, 'clicks_good': False},
-                'all_criteria_met': False
+                'all_criteria_met': False,
+                'has_web_data': True,
+                'has_attr_data': True
+            },
+            {
+                'ad_set_name': '071425_CEO_AppointmentPage_Toronto_Costco_150_LookalikeAudience_Static_Feed_EXP-LandingPageA',
+                'ad_name': '062625_$150_UGC_Video_Costco_Seasonal_Emily_Convenience_5StarDentist_H1B2_NR',
+                'spend': 2200,
+                'clicks': 380,
+                'impressions': 45000,
+                'ctr': 0.84,
+                'cpc': 5.79,
+                'site_visits': 320,
+                'funnel_starts': 65,
+                'funnel_start_rate': 20.3,
+                'survey_complete': 50,
+                'survey_completion_rate': 76.9,
+                'checkout_starts': 42,
+                'checkout_start_rate': 84.0,
+                'bookings': 15,
+                'booking_conversion_rate': 4.7,
+                'cpa': 146.67,
+                'revenue': 4500,
+                'ltv': 666.67,
+                'cac': 325.93,
+                'roas': 2.05,
+                'completion_rate': 0.45,
+                'promo_spend': 225,
+                'total_cost': 2425,
+                'success_criteria': {'ctr_good': True, 'funnel_start_good': True, 'cpa_good': False, 'clicks_good': False},
+                'all_criteria_met': False,
+                'has_web_data': True,
+                'has_attr_data': True
             }
         ]
         print("✅ Sample data loaded")
@@ -261,6 +385,47 @@ class FacebookOptimizationTool:
         except Exception as e:
             return f"OpenAI API error: {str(e)}"
 
+    def get_performance_summary(self):
+        """Get summary of performance data for AI analysis"""
+        if not self.performance_data:
+            return "No performance data available"
+        
+        total_ads = len(self.performance_data)
+        successful_ads = len([ad for ad in self.performance_data if ad['all_criteria_met']])
+        
+        # Calculate aggregates
+        total_spend = sum(ad['spend'] for ad in self.performance_data)
+        total_revenue = sum(ad['revenue'] for ad in self.performance_data)
+        avg_ctr = sum(ad['ctr'] for ad in self.performance_data) / total_ads
+        avg_cpa = sum(ad['cpa'] for ad in self.performance_data if ad['cpa'] > 0) / max(1, len([ad for ad in self.performance_data if ad['cpa'] > 0]))
+        avg_roas = sum(ad['roas'] for ad in self.performance_data if ad['roas'] > 0) / max(1, len([ad for ad in self.performance_data if ad['roas'] > 0]))
+        
+        # Top performers
+        top_performers = sorted(self.performance_data, key=lambda x: x['roas'], reverse=True)[:5]
+        worst_performers = sorted(self.performance_data, key=lambda x: x['roas'])[:5]
+        
+        summary = f"""
+        PERFORMANCE DATA SUMMARY:
+        - Total Ads: {total_ads}
+        - Successful Ads (all criteria met): {successful_ads} ({successful_ads/total_ads*100:.1f}%)
+        - Total Spend: ${total_spend:,.2f}
+        - Total Revenue: ${total_revenue:,.2f}
+        - Average CTR: {avg_ctr:.2f}%
+        - Average CPA: ${avg_cpa:.2f}
+        - Average ROAS: {avg_roas:.2f}
+        
+        TOP 3 PERFORMERS (by ROAS):
+        """
+        
+        for i, ad in enumerate(top_performers[:3]):
+            summary += f"\n{i+1}. {ad['ad_name'][:50]}... - ROAS: {ad['roas']:.2f}, CTR: {ad['ctr']:.2f}%, CPA: ${ad['cpa']:.2f}"
+        
+        summary += "\n\nWORST 3 PERFORMERS (by ROAS):"
+        for i, ad in enumerate(worst_performers[:3]):
+            summary += f"\n{i+1}. {ad['ad_name'][:50]}... - ROAS: {ad['roas']:.2f}, CTR: {ad['ctr']:.2f}%, CPA: ${ad['cpa']:.2f}"
+        
+        return summary
+
 # Initialize the tool
 tool = FacebookOptimizationTool()
 
@@ -271,6 +436,9 @@ def dashboard():
 @app.route('/api/performance-summary')
 def performance_summary():
     try:
+        if not tool.performance_data:
+            return jsonify({'error': 'No performance data available'}), 404
+        
         # Calculate summary statistics
         total_spend = sum(row['spend'] for row in tool.performance_data)
         total_clicks = sum(row['clicks'] for row in tool.performance_data)
@@ -304,6 +472,9 @@ def performance_summary():
 @app.route('/api/performance-data')
 def performance_data():
     try:
+        if not tool.performance_data:
+            return jsonify({'error': 'No performance data available'}), 404
+            
         view_type = request.args.get('view', 'adset')  # 'adset' or 'ad'
         
         if view_type == 'adset':
@@ -353,6 +524,9 @@ def performance_data():
 @app.route('/api/optimization-recommendations')
 def optimization_recommendations():
     try:
+        if not tool.performance_data:
+            return jsonify({'error': 'No performance data available'}), 404
+            
         recommendations = []
         
         for row in tool.performance_data:
@@ -363,15 +537,16 @@ def optimization_recommendations():
             bookings = row['bookings']
             cpa = row['cpa']
             roas = row['roas']
+            booking_conversion_rate = row['booking_conversion_rate']
             
-            # 24-hour rules
+            # 24-hour rules (Rule 2)
             if spend > 100:
                 if ctr <= 0.40 or cpc >= 6 or funnel_start_rate <= 15:
                     recommendations.append({
                         'ad_set_name': row['ad_set_name'],
                         'ad_name': row['ad_name'],
                         'action': 'pause',
-                        'reason': 'Poor early performance metrics',
+                        'reason': 'Poor early performance metrics (24h rule)',
                         'spend': spend,
                         'bookings': bookings,
                         'cpa': cpa,
@@ -382,10 +557,9 @@ def optimization_recommendations():
                         }
                     })
             
-            # Advanced performance rules
+            # Advanced performance rules (Rule 3)
             if spend > 300:
-                cvr = row['booking_conversion_rate']
-                if cvr > 2.5 and cpa < 120 and roas > 1:
+                if booking_conversion_rate > 2.5 and cpa < 120 and roas > 1:
                     recommendations.append({
                         'ad_set_name': row['ad_set_name'],
                         'ad_name': row['ad_name'],
@@ -395,7 +569,7 @@ def optimization_recommendations():
                         'bookings': bookings,
                         'cpa': cpa,
                         'current_metrics': {
-                            'cvr': cvr,
+                            'booking_conversion_rate': booking_conversion_rate,
                             'cpa': cpa,
                             'roas': roas
                         }
@@ -415,9 +589,12 @@ def generate_creative_brief():
         value_pillar = data.get('value_pillar', 'Convenience-Insurance')
         creative_format = data.get('creative_format', 'Static')
         
-        # Generate AI-enhanced brief
+        # Get performance insights for the brief
+        performance_summary = tool.get_performance_summary()
+        
+        # Generate AI-enhanced brief with actual data
         prompt = f"""
-        Create a comprehensive Facebook creative brief for a dental appointment booking campaign.
+        Create a comprehensive Facebook creative brief for a dental appointment booking campaign based on actual performance data.
         
         Campaign Details:
         - Name: {campaign_name}
@@ -426,14 +603,18 @@ def generate_creative_brief():
         - Value Pillar: {value_pillar}
         - Creative Format: {creative_format}
         
-        Based on successful patterns, create a brief that includes:
-        1. Campaign Overview
-        2. Target Audience Insights
-        3. Messaging Framework
-        4. Visual Direction
-        5. Success Metrics
+        ACTUAL PERFORMANCE DATA:
+        {performance_summary}
         
-        Focus on the specified messaging and value pillars for this {creative_format} campaign.
+        Based on this real performance data and successful patterns, create a brief that includes:
+        1. Campaign Overview with data-driven insights
+        2. Target Audience Insights based on successful campaigns
+        3. Messaging Framework incorporating the {messaging_pillar} pillar
+        4. Visual Direction for {creative_format} format
+        5. Success Metrics based on current performance benchmarks
+        6. Specific recommendations based on top-performing ads
+        
+        Focus on actionable insights from the performance data to improve campaign success.
         """
         
         messages = [{"role": "user", "content": prompt}]
@@ -456,33 +637,77 @@ def ai_insights():
     try:
         insight_type = request.args.get('type', 'cluster')
         
+        # Get actual performance data for analysis
+        performance_summary = tool.get_performance_summary()
+        
         if insight_type == 'cluster':
-            prompt = """
-            Analyze the Facebook ad performance data and identify key patterns for optimization.
-            Focus on successful vs unsuccessful campaigns and provide actionable insights.
+            prompt = f"""
+            Analyze this ACTUAL Facebook ad performance data and identify key patterns for optimization:
+            
+            {performance_summary}
+            
+            Provide specific insights about:
+            1. What makes the top performers successful
+            2. Common patterns in underperforming ads
+            3. Actionable optimization recommendations
+            4. Budget reallocation suggestions
+            5. Creative strategy insights
+            
+            Focus on data-driven insights, not generic advice.
             """
         elif insight_type == 'creative':
-            prompt = """
-            Analyze creative performance patterns and provide recommendations for future creative development.
-            Focus on messaging, format, and design elements that drive success.
+            prompt = f"""
+            Analyze creative performance patterns from this ACTUAL data:
+            
+            {performance_summary}
+            
+            Provide insights on:
+            1. Creative elements that drive success
+            2. Messaging patterns in top performers
+            3. Format recommendations (Static vs Video)
+            4. Creative refresh opportunities
+            5. A/B testing suggestions
+            
+            Base recommendations on actual performance data.
             """
         elif insight_type == 'cro':
-            prompt = """
-            Analyze conversion funnel performance and provide CRO recommendations.
-            Focus on Funnel Start, Survey Completion, and Checkout Start optimization.
+            prompt = f"""
+            Analyze conversion funnel performance from this ACTUAL data:
+            
+            {performance_summary}
+            
+            Provide CRO recommendations for:
+            1. Funnel Start rate optimization
+            2. Survey Completion improvements
+            3. Checkout Start rate enhancement
+            4. Landing page optimization
+            5. User experience improvements
+            
+            Focus on data-driven conversion optimization.
             """
         else:
-            prompt = """
-            Provide strategic recommendations for campaign optimization based on performance data.
-            Include budget allocation, audience targeting, and creative strategy insights.
+            prompt = f"""
+            Provide strategic recommendations based on this ACTUAL performance data:
+            
+            {performance_summary}
+            
+            Include:
+            1. Campaign strategy insights
+            2. Budget allocation recommendations
+            3. Audience targeting optimization
+            4. Scaling opportunities
+            5. Risk mitigation strategies
+            
+            Base all recommendations on the actual data provided.
             """
         
         messages = [{"role": "user", "content": prompt}]
-        ai_insights = tool.call_openai_api(messages, temperature=0.7, max_tokens=1000)
+        ai_insights = tool.call_openai_api(messages, temperature=0.7, max_tokens=1200)
         
         return jsonify({
             'insight_type': insight_type,
             'insights': ai_insights,
+            'data_summary': performance_summary,
             'generated_at': datetime.now().isoformat()
         })
     except Exception as e:
@@ -512,7 +737,8 @@ def refresh_data():
         return jsonify({
             'status': 'success',
             'message': 'Data refreshed successfully',
-            'records_loaded': len(tool.performance_data)
+            'records_loaded': len(tool.performance_data),
+            'has_real_data': len(tool.performance_data) > 2  # More than sample data
         })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)})
