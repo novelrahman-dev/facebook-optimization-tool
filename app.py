@@ -8,11 +8,6 @@ import schedule
 import time
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
-from openai import OpenAI
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-from docx import Document
-from docx.shared import Inches
 import io
 import base64
 
@@ -21,6 +16,8 @@ CORS(app)
 
 class FacebookOptimizationTool:
     def __init__(self):
+        self.openai_client = None  # Initialize as None first
+        self.gc = None
         self.setup_apis()
         self.load_data()
         self.setup_automation()
@@ -31,8 +28,16 @@ class FacebookOptimizationTool:
             # OpenAI API (updated for new version)
             api_key = os.getenv('OPENAI_API_KEY')
             if api_key:
-                self.openai_client = OpenAI(api_key=api_key)
-                print("✅ OpenAI API client initialized")
+                try:
+                    from openai import OpenAI
+                    self.openai_client = OpenAI(api_key=api_key)
+                    print("✅ OpenAI API client initialized")
+                except ImportError:
+                    print("❌ OpenAI package not found")
+                    self.openai_client = None
+                except Exception as e:
+                    print(f"❌ OpenAI client error: {e}")
+                    self.openai_client = None
             else:
                 self.openai_client = None
                 print("⚠️ OpenAI API key not found")
@@ -57,11 +62,20 @@ class FacebookOptimizationTool:
             # For Railway deployment, we'll use environment variable for credentials
             creds_json = os.getenv('GOOGLE_CREDENTIALS_JSON')
             if creds_json:
-                import json
-                creds_dict = json.loads(creds_json)
-                creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-                self.gc = gspread.authorize(creds)
-                print("✅ Google Sheets API initialized")
+                try:
+                    import gspread
+                    from oauth2client.service_account import ServiceAccountCredentials
+                    import json
+                    creds_dict = json.loads(creds_json)
+                    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+                    self.gc = gspread.authorize(creds)
+                    print("✅ Google Sheets API initialized")
+                except ImportError:
+                    print("❌ Google Sheets packages not found")
+                    self.gc = None
+                except Exception as e:
+                    print(f"❌ Google Sheets error: {e}")
+                    self.gc = None
             else:
                 print("⚠️ Google Sheets credentials not found")
                 self.gc = None
@@ -167,8 +181,9 @@ class FacebookOptimizationTool:
     def generate_ai_insights(self, insight_type='cluster'):
         """Generate AI-powered insights using OpenAI"""
         try:
-            if not self.openai_client:
-                return "OpenAI API not configured. Please add your OPENAI_API_KEY environment variable."
+            # Check if OpenAI client is available
+            if not hasattr(self, 'openai_client') or self.openai_client is None:
+                return "OpenAI API not configured. Please add your OPENAI_API_KEY environment variable and restart the application."
             
             if insight_type == 'cluster':
                 prompt = f"""
@@ -219,13 +234,14 @@ class FacebookOptimizationTool:
     def generate_creative_brief(self, campaign_name, campaign_type):
         """Generate AI-enhanced creative brief"""
         try:
-            if not self.openai_client:
+            # Check if OpenAI client is available
+            if not hasattr(self, 'openai_client') or self.openai_client is None:
                 return {
                     'campaign_name': campaign_name,
                     'campaign_type': campaign_type,
                     'generated_at': datetime.now().isoformat(),
                     'error': 'OpenAI API not configured',
-                    'ai_content': 'Please add your OPENAI_API_KEY environment variable to enable AI features.'
+                    'ai_content': 'Please add your OPENAI_API_KEY environment variable and restart the application to enable AI features.'
                 }
             
             # Get performance insights
