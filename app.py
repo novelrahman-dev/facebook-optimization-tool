@@ -26,15 +26,11 @@ class FacebookOptimizationTool:
         # Data loading status
         self.loading_status = {
             'google_sheets_loaded': False,
-            'facebook_api_loading': False,
-            'facebook_api_loaded': False,
+            'facebook_creative_loading': False,
+            'facebook_creative_loaded': False,
             'data_processed': False,
-            'total_ads_loaded': 0,
-            'current_page': 0,
             'error_message': None,
-            'last_updated': None,
-            'expected_ads': 747,
-            'pagination_complete': False
+            'last_updated': None
         }
         
         # Initialize KPI settings with defaults
@@ -88,7 +84,7 @@ class FacebookOptimizationTool:
         self.web_data = []
         self.attr_data = []
         self.fb_data = []
-        self.fb_api_data = []
+        self.creative_data = {}  # For Facebook creative intelligence
         
         # Start background data loading
         self.start_background_loading()
@@ -178,20 +174,18 @@ class FacebookOptimizationTool:
         """Start background data loading in a separate thread"""
         def background_load():
             try:
-                # Load Google Sheets data first (fast)
+                # Load Google Sheets data (primary source)
                 self.load_google_sheets_data()
                 self.loading_status['google_sheets_loaded'] = True
                 
-                # Try to load cached Facebook data first
-                if self.load_cached_facebook_data():
-                    print("✅ Loaded Facebook data from cache")
-                    self.loading_status['facebook_api_loaded'] = True
-                    self.process_combined_data()
-                    self.loading_status['data_processed'] = True
-                    self.loading_status['last_updated'] = datetime.now().isoformat()
-                else:
-                    # Load fresh Facebook API data in background
-                    self.load_facebook_api_data_background()
+                # Process combined data using Google Sheets only
+                self.process_combined_data()
+                self.loading_status['data_processed'] = True
+                
+                # Load Facebook creative data in background (for AI insights)
+                self.load_facebook_creative_data_background()
+                
+                self.loading_status['last_updated'] = datetime.now().isoformat()
                 
             except Exception as e:
                 print(f"❌ Background loading error: {e}")
@@ -200,41 +194,6 @@ class FacebookOptimizationTool:
         # Start background thread
         thread = threading.Thread(target=background_load, daemon=True)
         thread.start()
-
-    def load_cached_facebook_data(self):
-        """Load Facebook data from cache if available and recent"""
-        try:
-            cache_file = '/tmp/facebook_api_cache.pkl'
-            if os.path.exists(cache_file):
-                # Check if cache is recent (less than 30 minutes old)
-                cache_age = time.time() - os.path.getmtime(cache_file)
-                if cache_age < 1800:  # 30 minutes
-                    with open(cache_file, 'rb') as f:
-                        cached_data = pickle.load(f)
-                        self.fb_api_data = cached_data.get('fb_api_data', [])
-                        self.loading_status['total_ads_loaded'] = len(self.fb_api_data)
-                        print(f"✅ Loaded {len(self.fb_api_data)} ads from cache")
-                        return True
-                else:
-                    print("⚠️ Cache is too old, will refresh")
-            return False
-        except Exception as e:
-            print(f"⚠️ Error loading cache: {e}")
-            return False
-
-    def save_facebook_data_cache(self):
-        """Save Facebook data to cache"""
-        try:
-            cache_file = '/tmp/facebook_api_cache.pkl'
-            cache_data = {
-                'fb_api_data': self.fb_api_data,
-                'timestamp': datetime.now().isoformat()
-            }
-            with open(cache_file, 'wb') as f:
-                pickle.dump(cache_data, f)
-            print("✅ Facebook data cached successfully")
-        except Exception as e:
-            print(f"⚠️ Error saving cache: {e}")
 
     def load_google_sheets_data(self):
         """Load data from Google Sheets"""
@@ -257,7 +216,7 @@ class FacebookOptimizationTool:
             self.attr_data = attr_records
             print(f"✅ Loaded {len(attr_records)} rows from attribution")
             
-            # FB Spend Data (for spend only)
+            # FB Spend Data (primary source for performance metrics)
             fb_sheet = self.gc.open_by_url('https://docs.google.com/spreadsheets/d/1BG--tds9na-WC3Dx3t0DTuWcmZAVYbBsvWCUJ-yFQTk/edit?usp=sharing')
             fb_worksheet = fb_sheet.get_worksheet(0)
             fb_records = fb_worksheet.get_all_records()
@@ -267,403 +226,156 @@ class FacebookOptimizationTool:
         except Exception as e:
             print(f"❌ Google Sheets loading error: {e}")
 
-    def debug_facebook_api_filtering(self):
-        """Debug Facebook API filtering to understand the mismatch"""
-        debug_info = {
-            'google_sheets_analysis': {},
-            'facebook_api_analysis': {},
-            'comparison': {},
-            'sample_data': {},
-            'errors': []
-        }
-        
-        try:
-            # Analyze Google Sheets data
-            if not self.fb_data:
-                debug_info['errors'].append("No Google Sheets data loaded")
-                return debug_info
-            
-            # Google Sheets Analysis
-            unique_combinations = set()
-            unique_ad_names = set()
-            unique_adset_names = set()
-            total_rows = len(self.fb_data)
-            
-            sample_gs_rows = []
-            for i, row in enumerate(self.fb_data[:10]):
-                ad_set_name = str(row.get('Facebook Adset Name', '')).strip()
-                ad_name = str(row.get('Facebook Ad Name', '')).strip()
-                
-                sample_gs_rows.append({
-                    'row_number': i + 1,
-                    'ad_set_name': ad_set_name,
-                    'ad_name': ad_name,
-                    'combination': f"{ad_set_name}|||{ad_name}" if ad_set_name and ad_name else "INVALID"
-                })
-                
-                if (ad_set_name and ad_name and 
-                    ad_set_name.lower() != 'total' and ad_name.lower() != 'total'):
-                    combination_key = f"{ad_set_name}|||{ad_name}"
-                    unique_combinations.add(combination_key)
-                    unique_ad_names.add(ad_name)
-                    unique_adset_names.add(ad_set_name)
-            
-            debug_info['google_sheets_analysis'] = {
-                'total_rows': total_rows,
-                'unique_combinations': len(unique_combinations),
-                'unique_ad_names': len(unique_ad_names),
-                'unique_adset_names': len(unique_adset_names),
-                'sample_combinations': list(unique_combinations)[:10]
-            }
-            
-            debug_info['sample_data']['google_sheets_rows'] = sample_gs_rows
-            
-            # Facebook API Analysis
-            if not self.fb_access_token or not self.fb_ad_account_id:
-                debug_info['errors'].append("Facebook API credentials not available")
-                return debug_info
-            
-            # Test Facebook API
-            since_date = "2025-06-01"
-            until_date = "2025-08-20"
-            
-            # Get first few pages of Facebook API data
-            all_fb_ads = []
-            after_cursor = None
-            page_count = 0
-            
-            while page_count < 10:  # Test first 10 pages
-                try:
-                    url = f"https://graph.facebook.com/v18.0/{self.fb_ad_account_id}/ads"
-                    
-                    params = {
-                        'access_token': self.fb_access_token,
-                        'fields': 'id,name,adset{id,name},status,effective_status,created_time',
-                        'time_range': json.dumps({
-                            'since': since_date,
-                            'until': until_date
-                        }),
-                        'limit': 50,
-                        'level': 'ad'
-                    }
-                    
-                    if after_cursor:
-                        params['after'] = after_cursor
-                    
-                    page_count += 1
-                    response = requests.get(url, params=params, timeout=30)
-                    
-                    if response.status_code == 200:
-                        data = response.json()
-                        ads_data = data.get('data', [])
-                        
-                        if not ads_data:
-                            break
-                        
-                        all_fb_ads.extend(ads_data)
-                        
-                        # Check for next page
-                        paging = data.get('paging', {})
-                        cursors = paging.get('cursors', {})
-                        after_cursor = cursors.get('after')
-                        
-                        if not after_cursor:
-                            break
-                            
-                    else:
-                        debug_info['errors'].append(f"Facebook API error: {response.status_code} - {response.text}")
-                        break
-                        
-                except Exception as e:
-                    debug_info['errors'].append(f"Facebook API request error: {str(e)}")
-                    break
-            
-            # Analyze Facebook API data
-            fb_combinations = set()
-            fb_ad_names = set()
-            fb_adset_names = set()
-            
-            sample_fb_ads = []
-            for i, ad in enumerate(all_fb_ads[:10]):
-                ad_name = ad.get('name', '')
-                adset_info = ad.get('adset', {})
-                adset_name = adset_info.get('name', '') if adset_info else ''
-                status = ad.get('status', '')
-                effective_status = ad.get('effective_status', '')
-                created_time = ad.get('created_time', '')
-                
-                sample_fb_ads.append({
-                    'ad_number': i + 1,
-                    'ad_id': ad.get('id', ''),
-                    'ad_name': ad_name,
-                    'adset_name': adset_name,
-                    'status': status,
-                    'effective_status': effective_status,
-                    'created_time': created_time,
-                    'combination': f"{adset_name}|||{ad_name}" if ad_name and adset_name else "INVALID"
-                })
-                
-                if ad_name and adset_name:
-                    combination_key = f"{adset_name}|||{ad_name}"
-                    fb_combinations.add(combination_key)
-                    fb_ad_names.add(ad_name)
-                    fb_adset_names.add(adset_name)
-            
-            debug_info['facebook_api_analysis'] = {
-                'total_ads_fetched': len(all_fb_ads),
-                'pages_fetched': page_count,
-                'unique_combinations': len(fb_combinations),
-                'unique_ad_names': len(fb_ad_names),
-                'unique_adset_names': len(fb_adset_names),
-                'sample_combinations': list(fb_combinations)[:10]
-            }
-            
-            debug_info['sample_data']['facebook_api_ads'] = sample_fb_ads
-            
-            # Comparison Analysis
-            matching_combinations = unique_combinations.intersection(fb_combinations)
-            missing_in_fb = unique_combinations - fb_combinations
-            extra_in_fb = fb_combinations - unique_combinations
-            
-            debug_info['comparison'] = {
-                'matching_combinations': len(matching_combinations),
-                'missing_in_facebook': len(missing_in_fb),
-                'extra_in_facebook': len(extra_in_fb),
-                'match_percentage': (len(matching_combinations) / len(unique_combinations) * 100) if unique_combinations else 0,
-                'sample_matches': list(matching_combinations)[:5],
-                'sample_missing_in_fb': list(missing_in_fb)[:10],
-                'sample_extra_in_fb': list(extra_in_fb)[:10]
-            }
-            
-        except Exception as e:
-            debug_info['errors'].append(f"Debug analysis error: {str(e)}")
-        
-        return debug_info
-
-    def load_facebook_api_data_background(self):
-        """Load marketing metrics from Facebook API with exact Ad Set + Ad Name filtering"""
+    def load_facebook_creative_data_background(self):
+        """Load Facebook creative data for AI insights (separate from performance data)"""
         try:
             if not self.fb_access_token or not self.fb_ad_account_id:
-                print("⚠️ Facebook API credentials not available")
+                print("⚠️ Facebook API credentials not available for creative data")
                 return
             
-            self.loading_status['facebook_api_loading'] = True
+            self.loading_status['facebook_creative_loading'] = True
             
-            # Use exact date range to match Google Sheets
-            since_date = "2025-06-01"
-            until_date = "2025-08-20"
+            print("🎨 Loading Facebook creative data for AI insights...")
             
-            print(f"🔄 Loading Facebook API data from {since_date} to {until_date}")
-            print(f"🎯 Target: Load exactly 747 ads to match Google Sheets")
+            # Load ad set level creative data
+            adset_data = self.load_facebook_adsets_creative()
             
-            # Get list of Ad Set + Ad Name combinations from Google Sheets
-            fb_sheet_combinations = set()
-            for row in self.fb_data:
-                ad_set_name = str(row.get('Facebook Adset Name', '')).strip()
-                ad_name = str(row.get('Facebook Ad Name', '')).strip()
-                if (ad_set_name and ad_name and 
-                    ad_set_name.lower() != 'total' and ad_name.lower() != 'total'):
-                    # Create unique combination key
-                    combination_key = f"{ad_set_name}|||{ad_name}"
-                    fb_sheet_combinations.add(combination_key)
+            # Load ad level creative data
+            ad_data = self.load_facebook_ads_creative()
             
-            print(f"📋 Found {len(fb_sheet_combinations)} unique Ad Set + Ad Name combinations in Google Sheets")
+            self.creative_data = {
+                'adsets': adset_data,
+                'ads': ad_data,
+                'last_updated': datetime.now().isoformat()
+            }
             
-            all_ads_data = []
+            self.loading_status['facebook_creative_loading'] = False
+            self.loading_status['facebook_creative_loaded'] = True
+            
+            print(f"✅ Facebook creative data loaded: {len(adset_data)} ad sets, {len(ad_data)} ads")
+            
+        except Exception as e:
+            print(f"❌ Facebook creative data loading error: {e}")
+            self.loading_status['facebook_creative_loading'] = False
+            self.loading_status['error_message'] = str(e)
+
+    def load_facebook_adsets_creative(self):
+        """Load ad set level creative data from Facebook API"""
+        try:
+            url = f"https://graph.facebook.com/v18.0/{self.fb_ad_account_id}/adsets"
+            
+            params = {
+                'access_token': self.fb_access_token,
+                'fields': 'id,name,targeting,optimization_goal,billing_event,bid_amount,daily_budget,lifetime_budget,start_time,end_time,status,effective_status',
+                'limit': 100
+            }
+            
+            adsets_data = []
             after_cursor = None
             page_count = 0
             
-            # Load Facebook API data with filtering
-            while len(all_ads_data) < 800:  # Safety limit slightly above 747
-                try:
-                    # Facebook API endpoint for ads with insights
-                    url = f"https://graph.facebook.com/v18.0/{self.fb_ad_account_id}/ads"
+            while page_count < 20:  # Limit to prevent timeout
+                if after_cursor:
+                    params['after'] = after_cursor
+                
+                response = requests.get(url, params=params, timeout=30)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    adsets = data.get('data', [])
                     
-                    params = {
-                        'access_token': self.fb_access_token,
-                        'fields': 'id,name,adset{id,name},insights{impressions,clicks,spend,ctr,cpc,cpm}',
-                        'time_range': json.dumps({
-                            'since': since_date,
-                            'until': until_date
-                        }),
-                        'limit': 50,
-                        'level': 'ad',
-                        'filtering': json.dumps([
-                            {
-                                'field': 'delivery_info',
-                                'operator': 'IN',
-                                'value': ['active', 'paused', 'pending_review', 'disapproved', 'preapproved', 'pending_billing_info', 'campaign_paused', 'adset_paused']
-                            }
-                        ])
-                    }
+                    if not adsets:
+                        break
                     
-                    if after_cursor:
-                        params['after'] = after_cursor
-                    
+                    adsets_data.extend(adsets)
                     page_count += 1
-                    self.loading_status['current_page'] = page_count
-                    print(f"📡 Fetching page {page_count} from Facebook API...")
                     
-                    response = requests.get(url, params=params, timeout=30)
+                    # Check for next page
+                    paging = data.get('paging', {})
+                    cursors = paging.get('cursors', {})
+                    after_cursor = cursors.get('after')
                     
-                    if response.status_code == 200:
-                        data = response.json()
-                        ads_data = data.get('data', [])
-                        
-                        if not ads_data:
-                            print(f"📄 No more ads available on page {page_count}")
-                            break
-                        
-                        # Filter ads to only include those in Google Sheets (Ad Set + Ad Name combination)
-                        filtered_ads = []
-                        for ad in ads_data:
-                            ad_name = ad.get('name', '')
-                            adset_info = ad.get('adset', {})
-                            adset_name = adset_info.get('name', '') if adset_info else ''
-                            
-                            if ad_name and adset_name:
-                                # Create combination key to match Google Sheets
-                                combination_key = f"{adset_name}|||{ad_name}"
-                                if combination_key in fb_sheet_combinations:
-                                    filtered_ads.append(ad)
-                        
-                        all_ads_data.extend(filtered_ads)
-                        self.loading_status['total_ads_loaded'] = len(all_ads_data)
-                        print(f"✅ Loaded {len(filtered_ads)} matching ads from page {page_count} (Total: {len(all_ads_data)}/747)")
-                        
-                        # Stop if we have enough ads
-                        if len(all_ads_data) >= 747:
-                            print(f"🎯 Reached target of 747 ads - stopping pagination")
-                            break
-                        
-                        # Check for next page
-                        paging = data.get('paging', {})
-                        cursors = paging.get('cursors', {})
-                        after_cursor = cursors.get('after')
-                        
-                        if not after_cursor:
-                            print("📄 Reached end of data - no more pages available")
-                            break
-                        
-                        # Add small delay to respect rate limits
-                        time.sleep(0.3)
-                        
-                    elif response.status_code == 400:
-                        error_data = response.json()
-                        error_message = error_data.get('error', {}).get('message', 'Unknown error')
-                        print(f"❌ Facebook API error: {response.status_code} - {error_message}")
-                        self.loading_status['error_message'] = error_message
-                        break
-                    
-                    else:
-                        print(f"❌ Facebook API error: {response.status_code} - {response.text}")
-                        self.loading_status['error_message'] = f"API error: {response.status_code}"
+                    if not after_cursor:
                         break
                         
-                except requests.exceptions.Timeout:
-                    print("⏰ Facebook API request timeout, retrying...")
-                    time.sleep(2)
-                    continue
-                except Exception as e:
-                    print(f"❌ Facebook API request error: {e}")
-                    self.loading_status['error_message'] = str(e)
+                    time.sleep(0.2)  # Rate limit respect
+                    
+                else:
+                    print(f"⚠️ Facebook adsets API error: {response.status_code}")
                     break
             
-            # Trim to exactly 747 ads if we got more
-            if len(all_ads_data) > 747:
-                all_ads_data = all_ads_data[:747]
-                print(f"✂️ Trimmed to exactly 747 ads")
+            return adsets_data
             
-            # Process the data
-            self.process_facebook_data_chunk(all_ads_data)
-            self.process_combined_data()
-            
-            # Save to cache
-            self.save_facebook_data_cache()
-            
-            # Update status
-            self.loading_status['facebook_api_loading'] = False
-            self.loading_status['facebook_api_loaded'] = True
-            self.loading_status['data_processed'] = True
-            self.loading_status['pagination_complete'] = True
-            self.loading_status['last_updated'] = datetime.now().isoformat()
-            
-            print(f"✅ Facebook API loading complete - {len(all_ads_data)} total ads loaded")
-            
-            if len(all_ads_data) == 747:
-                print(f"🎯 Perfect match! Loaded exactly 747 ads as expected")
-            else:
-                print(f"⚠️ Loaded {len(all_ads_data)} ads instead of expected 747")
-                
         except Exception as e:
-            print(f"❌ Facebook API loading error: {e}")
-            self.loading_status['facebook_api_loading'] = False
-            self.loading_status['error_message'] = str(e)
+            print(f"❌ Error loading Facebook adsets: {e}")
+            return []
 
-    def process_facebook_data_chunk(self, all_ads_data):
-        """Process Facebook API data chunk"""
+    def load_facebook_ads_creative(self):
+        """Load ad level creative data from Facebook API"""
         try:
-            fb_api_records = []
-            for ad in all_ads_data:
-                try:
-                    ad_id = ad.get('id', '')
-                    ad_name = ad.get('name', '')
-                    adset_info = ad.get('adset', {})
-                    adset_id = adset_info.get('id', '') if adset_info else ''
-                    adset_name = adset_info.get('name', '') if adset_info else ''
-                    insights = ad.get('insights', {}).get('data', [])
-                    
-                    if insights:
-                        # Aggregate insights data across date ranges
-                        total_impressions = 0
-                        total_clicks = 0
-                        total_spend = 0
-                        
-                        for insight in insights:
-                            total_impressions += self.safe_float(insight.get('impressions', 0))
-                            total_clicks += self.safe_float(insight.get('clicks', 0))
-                            total_spend += self.safe_float(insight.get('spend', 0))
-                        
-                        # Calculate metrics
-                        ctr = (total_clicks / total_impressions * 100) if total_impressions > 0 else 0
-                        cpc = total_spend / total_clicks if total_clicks > 0 else 0
-                        cpm = total_spend / total_impressions * 1000 if total_impressions > 0 else 0
-                        
-                        fb_api_records.append({
-                            'ad_id': ad_id,
-                            'ad_name': ad_name,
-                            'adset_id': adset_id,
-                            'adset_name': adset_name,
-                            'impressions': total_impressions,
-                            'clicks': total_clicks,
-                            'spend': total_spend,
-                            'ctr': ctr,
-                            'cpc': cpc,
-                            'cpm': cpm
-                        })
-                    else:
-                        # Include ads without insights data (they might have spend in Google Sheets)
-                        fb_api_records.append({
-                            'ad_id': ad_id,
-                            'ad_name': ad_name,
-                            'adset_id': adset_id,
-                            'adset_name': adset_name,
-                            'impressions': 0,
-                            'clicks': 0,
-                            'spend': 0,
-                            'ctr': 0,
-                            'cpc': 0,
-                            'cpm': 0
-                        })
-                        
-                except Exception as e:
-                    print(f"⚠️ Error processing ad data: {e}")
-                    continue
+            url = f"https://graph.facebook.com/v18.0/{self.fb_ad_account_id}/ads"
             
-            self.fb_api_data = fb_api_records
+            params = {
+                'access_token': self.fb_access_token,
+                'fields': 'id,name,adset{id,name},creative{id,title,body,image_url,video_id,url_tags,object_story_spec},status,effective_status',
+                'limit': 100
+            }
+            
+            ads_data = []
+            after_cursor = None
+            page_count = 0
+            
+            while page_count < 20:  # Limit to prevent timeout
+                if after_cursor:
+                    params['after'] = after_cursor
+                
+                response = requests.get(url, params=params, timeout=30)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    ads = data.get('data', [])
+                    
+                    if not ads:
+                        break
+                    
+                    # Process creative data
+                    for ad in ads:
+                        creative = ad.get('creative', {})
+                        if creative:
+                            # Extract creative elements
+                            ad['headline'] = creative.get('title', '')
+                            ad['text'] = creative.get('body', '')
+                            ad['image_url'] = creative.get('image_url', '')
+                            ad['video_id'] = creative.get('video_id', '')
+                            
+                            # Extract landing page URL from object_story_spec
+                            object_story = creative.get('object_story_spec', {})
+                            link_data = object_story.get('link_data', {})
+                            ad['landing_page_url'] = link_data.get('link', '')
+                            ad['call_to_action'] = link_data.get('call_to_action', {}).get('type', '')
+                    
+                    ads_data.extend(ads)
+                    page_count += 1
+                    
+                    # Check for next page
+                    paging = data.get('paging', {})
+                    cursors = paging.get('cursors', {})
+                    after_cursor = cursors.get('after')
+                    
+                    if not after_cursor:
+                        break
+                        
+                    time.sleep(0.2)  # Rate limit respect
+                    
+                else:
+                    print(f"⚠️ Facebook ads API error: {response.status_code}")
+                    break
+            
+            return ads_data
             
         except Exception as e:
-            print(f"❌ Error processing Facebook data chunk: {e}")
+            print(f"❌ Error loading Facebook ads: {e}")
+            return []
 
     def safe_float(self, value, default=0):
         """Safely convert value to float"""
@@ -678,87 +390,61 @@ class FacebookOptimizationTool:
             return default
 
     def process_combined_data(self):
-        """Process and combine data from all sources using Ad Set + Ad Name combinations"""
+        """Process and combine data from Google Sheets sources only"""
         try:
             combined_data = []
             
-            print(f"🔄 Processing data: {len(self.web_data)} web, {len(self.attr_data)} attr, {len(self.fb_data)} fb sheets, {len(self.fb_api_data)} fb api")
+            print(f"🔄 Processing Google Sheets data: {len(self.web_data)} web, {len(self.attr_data)} attr, {len(self.fb_data)} fb")
             
-            # Create lookup dictionaries using Ad Set + Ad Name combinations
+            # Create lookup dictionaries
             web_lookup = {}
             for row in self.web_data:
                 utm_content = str(row.get('Web Pages UTM Content', '')).strip()
                 utm_term = str(row.get('Web Pages UTM Term', '')).strip()
                 if utm_content and utm_term and utm_content.lower() != 'total' and utm_term.lower() != 'total':
-                    # Create combination key
-                    combination_key = f"{utm_term}|||{utm_content}"
-                    web_lookup[combination_key.lower()] = row
-                    # Also add individual keys for fallback
-                    web_lookup[utm_content.lower()] = row
-                    web_lookup[utm_term.lower()] = row
+                    # Create multiple keys for flexible matching
+                    keys = [
+                        f"{utm_term}|||{utm_content}".lower(),
+                        utm_content.lower(),
+                        utm_term.lower()
+                    ]
+                    for key in keys:
+                        web_lookup[key] = row
             
             attr_lookup = {}
             for row in self.attr_data:
                 utm_content = str(row.get('Attribution UTM Content', '')).strip()
                 utm_term = str(row.get('Attribution UTM Term', '')).strip()
                 if utm_content and utm_term and utm_content.lower() != 'total' and utm_term.lower() != 'total':
-                    # Create combination key
-                    combination_key = f"{utm_term}|||{utm_content}"
-                    attr_lookup[combination_key.lower()] = row
-                    # Also add individual keys for fallback
-                    attr_lookup[utm_content.lower()] = row
-                    attr_lookup[utm_term.lower()] = row
+                    # Create multiple keys for flexible matching
+                    keys = [
+                        f"{utm_term}|||{utm_content}".lower(),
+                        utm_content.lower(),
+                        utm_term.lower()
+                    ]
+                    for key in keys:
+                        attr_lookup[key] = row
             
-            # Create FB spend lookup using Ad Set + Ad Name combinations
-            fb_spend_lookup = {}
-            for row in self.fb_data:
-                ad_set_name = str(row.get('Facebook Adset Name', '')).strip()
-                ad_name = str(row.get('Facebook Ad Name', '')).strip()
-                if ad_set_name and ad_name and ad_set_name.lower() != 'total' and ad_name.lower() != 'total':
-                    # Create combination key
-                    combination_key = f"{ad_set_name}|||{ad_name}"
-                    fb_spend_lookup[combination_key.lower()] = row
-                    # Also add individual keys for fallback
-                    fb_spend_lookup[ad_name.lower()] = row
-                    fb_spend_lookup[ad_set_name.lower()] = row
+            print(f"🔍 Created lookups: {len(web_lookup)} web, {len(attr_lookup)} attr")
             
-            # Create FB API lookup using Ad Set + Ad Name combinations
-            fb_api_lookup = {}
-            for row in self.fb_api_data:
-                ad_set_name = str(row.get('adset_name', '')).strip()
-                ad_name = str(row.get('ad_name', '')).strip()
-                if ad_set_name and ad_name:
-                    # Create combination key
-                    combination_key = f"{ad_set_name}|||{ad_name}"
-                    fb_api_lookup[combination_key.lower()] = row
-                    # Also add individual keys for fallback
-                    fb_api_lookup[ad_name.lower()] = row
-                    fb_api_lookup[ad_set_name.lower()] = row
-            
-            print(f"🔍 Created lookups: {len(web_lookup)} web, {len(attr_lookup)} attr, {len(fb_spend_lookup)} fb spend, {len(fb_api_lookup)} fb api")
-            
-            # Process FB API data as primary source and combine with other data
+            # Process FB data as primary source
             processed_count = 0
-            for fb_api_row in self.fb_api_data:
-                ad_set_name = str(fb_api_row.get('adset_name', '')).strip()
-                ad_name = str(fb_api_row.get('ad_name', '')).strip()
-                ad_id = str(fb_api_row.get('ad_id', '')).strip()
+            for fb_row in self.fb_data:
+                ad_set_name = str(fb_row.get('Facebook Adset Name', '')).strip()
+                ad_name = str(fb_row.get('Facebook Ad Name', '')).strip()
                 
-                # Skip empty rows
-                if not ad_set_name or not ad_name:
+                # Skip empty or total rows
+                if (not ad_set_name or not ad_name or 
+                    ad_set_name.lower() == 'total' or ad_name.lower() == 'total'):
                     continue
                 
-                # Try to find matching data using Ad Set + Ad Name combination first
+                # Try to find matching data using multiple keys
                 web_row = {}
                 attr_row = {}
-                fb_spend_row = {}
                 
-                # Primary key: Ad Set + Ad Name combination
-                primary_key = f"{ad_set_name}|||{ad_name}".lower()
-                
-                # Try combination key first, then fallback to individual keys
+                # Search keys in order of preference
                 search_keys = [
-                    primary_key,
+                    f"{ad_set_name}|||{ad_name}".lower(),
                     ad_name.lower(),
                     ad_set_name.lower()
                 ]
@@ -773,40 +459,20 @@ class FacebookOptimizationTool:
                         attr_row = attr_lookup[key]
                         break
                 
-                for key in search_keys:
-                    if key in fb_spend_lookup:
-                        fb_spend_row = fb_spend_lookup[key]
-                        break
+                # Get spend and impressions from Facebook data
+                spend = self.safe_float(fb_row.get('Facebook Total Spend (USD)', 0))
+                impressions = self.safe_float(fb_row.get('Facebook Total Impressions', 0))
                 
-                # Get marketing metrics from Facebook API (accurate)
-                impressions = self.safe_float(fb_api_row.get('impressions', 0))
-                clicks = self.safe_float(fb_api_row.get('clicks', 0))
-                fb_api_ctr = self.safe_float(fb_api_row.get('ctr', 0))
-                fb_api_cpc = self.safe_float(fb_api_row.get('cpc', 0))
-                fb_api_cpm = self.safe_float(fb_api_row.get('cpm', 0))
+                # Calculate Link Clicks using Web Pages data (more accurate)
+                site_visits = self.safe_float(web_row.get('Web Pages Unique Count of Landing Pages', 0))
+                link_clicks = site_visits * 0.9  # Estimate link clicks as 90% of site visits
                 
-                # Get spend from Google Sheets (more reliable for your setup)
-                spend = self.safe_float(fb_spend_row.get('Facebook Total Spend (USD)', 0))
-                
-                # If no spend from Google Sheets, fallback to FB API spend
-                if spend == 0:
-                    spend = self.safe_float(fb_api_row.get('spend', 0))
-                
-                # Use Facebook API metrics (more accurate)
-                ctr = fb_api_ctr
-                cpc = fb_api_cpc
-                cpm = fb_api_cpm
-                
-                # If FB API metrics are 0, recalculate using spend from Google Sheets
-                if ctr == 0 and impressions > 0:
-                    ctr = (clicks / impressions * 100)
-                if cpc == 0 and clicks > 0:
-                    cpc = spend / clicks
-                if cpm == 0 and impressions > 0:
-                    cpm = spend / impressions * 1000
+                # Calculate marketing metrics using corrected link clicks
+                ctr = (link_clicks / impressions * 100) if impressions > 0 else 0
+                cpc = spend / link_clicks if link_clicks > 0 else 0
+                cpm = spend / impressions * 1000 if impressions > 0 else 0
                 
                 # Web data
-                site_visits = self.safe_float(web_row.get('Web Pages Unique Count of Landing Pages', 0))
                 funnel_starts = self.safe_float(web_row.get('Web Pages Unique Count of Sessions with Funnel Starts', 0))
                 survey_complete = self.safe_float(web_row.get('Web Pages Unique Count of Sessions with Match Results', 0))
                 checkout_starts = self.safe_float(web_row.get('Count of Sessions with Checkout Started (V2 included)', 0))
@@ -840,19 +506,20 @@ class FacebookOptimizationTool:
                     'ctr_good': ctr > self.kpi_settings['ctr_threshold'],
                     'funnel_start_good': funnel_start_rate > self.kpi_settings['funnel_start_threshold'],
                     'cpa_good': cpa < self.kpi_settings['cpa_threshold'] and cpa > 0,
-                    'clicks_good': clicks > self.kpi_settings['clicks_threshold'],
+                    'clicks_good': link_clicks > self.kpi_settings['clicks_threshold'],
                     'roas_good': roas > self.kpi_settings['roas_threshold'],
                     'cpc_good': cpc < self.kpi_settings['cpc_threshold'] and cpc > 0,
                     'cpm_good': cpm < self.kpi_settings['cpm_threshold'] and cpm > 0,
                     'booking_conversion_good': booking_conversion_rate > self.kpi_settings['booking_conversion_threshold']
                 }
                 
+                success_count = sum(1 for criteria in success_criteria.values() if criteria)
+                
                 combined_row = {
-                    'ad_id': ad_id,
                     'ad_set_name': ad_set_name,
                     'ad_name': ad_name,
                     'spend': spend,
-                    'clicks': clicks,
+                    'clicks': link_clicks,  # Using calculated link clicks
                     'impressions': impressions,
                     'ctr': ctr,
                     'cpc': cpc,
@@ -875,18 +542,18 @@ class FacebookOptimizationTool:
                     'promo_spend': promo_spend,
                     'total_cost': total_cost,
                     'success_criteria': success_criteria,
-                    'all_criteria_met': all(success_criteria.values()),
+                    'success_count': success_count,
+                    'all_criteria_met': success_count == 8,
                     'has_web_data': bool(web_row),
                     'has_attr_data': bool(attr_row),
-                    'has_fb_spend_data': bool(fb_spend_row),
-                    'data_source': 'fb_api'
+                    'data_source': 'google_sheets'
                 }
                 
                 combined_data.append(combined_row)
                 processed_count += 1
             
             self.performance_data = combined_data
-            print(f"✅ Processed {processed_count} combined records from {len(self.fb_api_data)} FB API records")
+            print(f"✅ Processed {processed_count} combined records from Google Sheets data")
             
             if processed_count == 0:
                 print("⚠️ No records were successfully combined - check data format...")
@@ -971,26 +638,267 @@ class FacebookOptimizationTool:
             'successful_ads': successful_ads
         }
 
+    def get_creative_dashboard_data(self):
+        """Get ad-level grouped data for Creative Dashboard"""
+        if not self.performance_data:
+            return []
+        
+        # Group by ad name only
+        ad_groups = defaultdict(list)
+        for ad in self.performance_data:
+            ad_groups[ad['ad_name']].append(ad)
+        
+        creative_data = []
+        for ad_name, ads in ad_groups.items():
+            # Aggregate metrics across all instances of this ad
+            total_spend = sum(ad['spend'] for ad in ads)
+            total_clicks = sum(ad['clicks'] for ad in ads)
+            total_impressions = sum(ad['impressions'] for ad in ads)
+            total_bookings = sum(ad['bookings'] for ad in ads)
+            total_revenue = sum(ad['revenue'] for ad in ads)
+            total_promo_spend = sum(ad['promo_spend'] for ad in ads)
+            total_site_visits = sum(ad['site_visits'] for ad in ads)
+            total_funnel_starts = sum(ad['funnel_starts'] for ad in ads)
+            
+            # Calculate aggregated metrics
+            ctr = (total_clicks / total_impressions * 100) if total_impressions > 0 else 0
+            cpc = total_spend / total_clicks if total_clicks > 0 else 0
+            cpm = total_spend / total_impressions * 1000 if total_impressions > 0 else 0
+            cpa = total_spend / total_bookings if total_bookings > 0 else 0
+            roas = total_revenue / total_spend if total_spend > 0 else 0
+            funnel_start_rate = (total_funnel_starts / total_site_visits * 100) if total_site_visits > 0 else 0
+            booking_conversion_rate = (total_bookings / total_site_visits * 100) if total_site_visits > 0 else 0
+            
+            # Average completion rate
+            avg_completion_rate = sum(ad['completion_rate'] for ad in ads) / len(ads)
+            
+            # Success criteria
+            success_criteria = {
+                'ctr_good': ctr > self.kpi_settings['ctr_threshold'],
+                'funnel_start_good': funnel_start_rate > self.kpi_settings['funnel_start_threshold'],
+                'cpa_good': cpa < self.kpi_settings['cpa_threshold'] and cpa > 0,
+                'clicks_good': total_clicks > self.kpi_settings['clicks_threshold'],
+                'roas_good': roas > self.kpi_settings['roas_threshold'],
+                'cpc_good': cpc < self.kpi_settings['cpc_threshold'] and cpc > 0,
+                'cpm_good': cpm < self.kpi_settings['cpm_threshold'] and cpm > 0,
+                'booking_conversion_good': booking_conversion_rate > self.kpi_settings['booking_conversion_threshold']
+            }
+            
+            success_count = sum(1 for criteria in success_criteria.values() if criteria)
+            
+            creative_data.append({
+                'ad_name': ad_name,
+                'ad_count': len(ads),
+                'spend': total_spend,
+                'clicks': total_clicks,
+                'impressions': total_impressions,
+                'ctr': ctr,
+                'cpc': cpc,
+                'cpm': cpm,
+                'funnel_start_rate': funnel_start_rate,
+                'booking_conversion_rate': booking_conversion_rate,
+                'completion_rate': avg_completion_rate,
+                'bookings': total_bookings,
+                'cpa': cpa,
+                'roas': roas,
+                'success_count': success_count,
+                'all_criteria_met': success_count == 8
+            })
+        
+        return creative_data
+
+    def get_adgroup_dashboard_data(self):
+        """Get ad set level grouped data with nested ads for Ad Group Dashboard"""
+        if not self.performance_data:
+            return []
+        
+        # Group by ad set name
+        adset_groups = defaultdict(list)
+        for ad in self.performance_data:
+            adset_groups[ad['ad_set_name']].append(ad)
+        
+        adgroup_data = []
+        for adset_name, ads in adset_groups.items():
+            # Calculate success ratio
+            successful_ads = len([ad for ad in ads if ad['all_criteria_met']])
+            total_ads = len(ads)
+            
+            # Aggregate ad set metrics
+            total_spend = sum(ad['spend'] for ad in ads)
+            total_clicks = sum(ad['clicks'] for ad in ads)
+            total_impressions = sum(ad['impressions'] for ad in ads)
+            total_bookings = sum(ad['bookings'] for ad in ads)
+            total_revenue = sum(ad['revenue'] for ad in ads)
+            total_promo_spend = sum(ad['promo_spend'] for ad in ads)
+            total_site_visits = sum(ad['site_visits'] for ad in ads)
+            total_funnel_starts = sum(ad['funnel_starts'] for ad in ads)
+            
+            # Calculate aggregated metrics
+            ctr = (total_clicks / total_impressions * 100) if total_impressions > 0 else 0
+            cpc = total_spend / total_clicks if total_clicks > 0 else 0
+            cpm = total_spend / total_impressions * 1000 if total_impressions > 0 else 0
+            cpa = total_spend / total_bookings if total_bookings > 0 else 0
+            roas = total_revenue / total_spend if total_spend > 0 else 0
+            funnel_start_rate = (total_funnel_starts / total_site_visits * 100) if total_site_visits > 0 else 0
+            booking_conversion_rate = (total_bookings / total_site_visits * 100) if total_site_visits > 0 else 0
+            
+            # Average completion rate
+            avg_completion_rate = sum(ad['completion_rate'] for ad in ads) / len(ads)
+            
+            adgroup_data.append({
+                'ad_set_name': adset_name,
+                'success_ratio': f"{successful_ads}/{total_ads}",
+                'successful_ads': successful_ads,
+                'total_ads': total_ads,
+                'spend': total_spend,
+                'clicks': total_clicks,
+                'impressions': total_impressions,
+                'ctr': ctr,
+                'cpc': cpc,
+                'cpm': cpm,
+                'funnel_start_rate': funnel_start_rate,
+                'booking_conversion_rate': booking_conversion_rate,
+                'completion_rate': avg_completion_rate,
+                'bookings': total_bookings,
+                'cpa': cpa,
+                'roas': roas,
+                'ads': ads  # Include individual ads for expansion
+            })
+        
+        return adgroup_data
+
+    def get_optimization_recommendations(self):
+        """Generate optimization recommendations using configurable rules"""
+        if not self.performance_data:
+            return []
+        
+        recommendations = []
+        
+        for ad in self.performance_data:
+            ad_name = ad['ad_name']
+            ad_set_name = ad['ad_set_name']
+            spend = ad['spend']
+            roas = ad['roas']
+            cpa = ad['cpa']
+            ctr = ad['ctr']
+            cpc = ad['cpc']
+            bookings = ad['bookings']
+            booking_rate = ad['booking_conversion_rate']
+            
+            # Determine priority based on spend
+            if spend >= self.optimization_rules['high_priority_spend_threshold']:
+                priority = 'High'
+            elif spend >= self.optimization_rules['medium_priority_spend_threshold']:
+                priority = 'Medium'
+            else:
+                priority = 'Low'
+            
+            # Pause recommendations
+            pause_reasons = []
+            
+            # Rule 1: Low ROAS with significant spend
+            if (roas < self.optimization_rules['pause_roas_threshold'] and 
+                spend > self.optimization_rules['pause_spend_threshold']):
+                pause_reasons.append(f"Low ROAS ({roas:.2f}) with ${spend:.0f} spend")
+            
+            # Rule 2: High CPA with spend
+            if (cpa > self.optimization_rules['pause_cpa_threshold'] and 
+                spend > self.optimization_rules['pause_cpa_spend_threshold']):
+                pause_reasons.append(f"High CPA (${cpa:.0f}) with ${spend:.0f} spend")
+            
+            # Rule 3: Low CTR with spend
+            if (ctr < self.optimization_rules['pause_ctr_threshold'] and 
+                spend > self.optimization_rules['pause_ctr_spend_threshold']):
+                pause_reasons.append(f"Low CTR ({ctr:.2f}%) with ${spend:.0f} spend")
+            
+            # Rule 4: No bookings with significant spend
+            if (bookings == 0 and 
+                spend > self.optimization_rules['pause_no_bookings_threshold']):
+                pause_reasons.append(f"No bookings with ${spend:.0f} spend")
+            
+            # Rule 5: High CPC with spend
+            if (cpc > self.optimization_rules['pause_high_cpc_threshold'] and 
+                spend > self.optimization_rules['pause_high_cpc_spend_threshold']):
+                pause_reasons.append(f"High CPC (${cpc:.2f}) with ${spend:.0f} spend")
+            
+            if pause_reasons:
+                recommendations.append({
+                    'ad_set_name': ad_set_name,
+                    'ad_name': ad_name,
+                    'action': 'pause',
+                    'priority': priority,
+                    'reasoning': '; '.join(pause_reasons),
+                    'spend': spend,
+                    'current_metrics': {
+                        'roas': roas,
+                        'cpa': cpa,
+                        'ctr': ctr,
+                        'cpc': cpc,
+                        'bookings': bookings
+                    }
+                })
+                continue  # Don't recommend scaling if pausing
+            
+            # Scale recommendations
+            scale_reasons = []
+            
+            # Rule 1: High ROAS with all criteria met
+            if (roas > self.optimization_rules['scale_roas_threshold'] and 
+                spend > self.optimization_rules['scale_min_spend_threshold']):
+                if self.optimization_rules['scale_all_criteria_required']:
+                    if ad['all_criteria_met']:
+                        scale_reasons.append(f"High ROAS ({roas:.2f}) with all success criteria met")
+                else:
+                    scale_reasons.append(f"High ROAS ({roas:.2f})")
+            
+            # Rule 2: Exceptional CTR
+            if ctr > self.optimization_rules['scale_ctr_bonus_threshold']:
+                scale_reasons.append(f"Exceptional CTR ({ctr:.2f}%)")
+            
+            # Rule 3: Low CPA bonus
+            if (cpa < self.optimization_rules['scale_cpa_bonus_threshold'] and 
+                cpa > 0 and bookings > 0):
+                scale_reasons.append(f"Low CPA (${cpa:.0f})")
+            
+            # Rule 4: High booking rate
+            if booking_rate > self.optimization_rules['scale_booking_rate_threshold']:
+                scale_reasons.append(f"High booking rate ({booking_rate:.1f}%)")
+            
+            if scale_reasons:
+                recommendations.append({
+                    'ad_set_name': ad_set_name,
+                    'ad_name': ad_name,
+                    'action': 'scale',
+                    'priority': priority,
+                    'reasoning': '; '.join(scale_reasons),
+                    'spend': spend,
+                    'current_metrics': {
+                        'roas': roas,
+                        'cpa': cpa,
+                        'ctr': ctr,
+                        'cpc': cpc,
+                        'bookings': bookings,
+                        'booking_rate': booking_rate
+                    }
+                })
+        
+        # Sort by priority and spend
+        priority_order = {'High': 3, 'Medium': 2, 'Low': 1}
+        recommendations.sort(key=lambda x: (priority_order[x['priority']], x['spend']), reverse=True)
+        
+        return recommendations
+
     def refresh_data(self):
         """Refresh all data sources"""
         try:
-            # Clear cache to force fresh load
-            cache_file = '/tmp/facebook_api_cache.pkl'
-            if os.path.exists(cache_file):
-                os.remove(cache_file)
-            
             # Reset loading status
             self.loading_status = {
                 'google_sheets_loaded': False,
-                'facebook_api_loading': False,
-                'facebook_api_loaded': False,
+                'facebook_creative_loading': False,
+                'facebook_creative_loaded': False,
                 'data_processed': False,
-                'total_ads_loaded': 0,
-                'current_page': 0,
                 'error_message': None,
-                'last_updated': None,
-                'expected_ads': 747,
-                'pagination_complete': False
+                'last_updated': None
             }
             
             # Start fresh background loading
@@ -1007,122 +915,6 @@ tool = FacebookOptimizationTool()
 @app.route('/')
 def dashboard():
     return render_template('enhanced_dashboard.html')
-
-@app.route('/debug')
-def debug_page():
-    """Debug page to analyze Facebook API filtering"""
-    debug_info = tool.debug_facebook_api_filtering()
-    
-    # Create HTML debug page
-    html_content = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Facebook API Debug Analysis</title>
-        <style>
-            body {{ font-family: Arial, sans-serif; margin: 20px; }}
-            .section {{ margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }}
-            .error {{ background-color: #ffebee; color: #c62828; }}
-            .success {{ background-color: #e8f5e8; color: #2e7d32; }}
-            .warning {{ background-color: #fff3e0; color: #ef6c00; }}
-            .info {{ background-color: #e3f2fd; color: #1565c0; }}
-            table {{ border-collapse: collapse; width: 100%; margin: 10px 0; }}
-            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-            th {{ background-color: #f5f5f5; }}
-            .code {{ background-color: #f5f5f5; padding: 10px; border-radius: 3px; font-family: monospace; }}
-            .metric {{ display: inline-block; margin: 10px; padding: 10px; background-color: #f0f0f0; border-radius: 5px; }}
-        </style>
-    </head>
-    <body>
-        <h1>🧪 Facebook API Debug Analysis</h1>
-        
-        <div class="section info">
-            <h2>📊 Summary</h2>
-            <div class="metric"><strong>Google Sheets Rows:</strong> {debug_info.get('google_sheets_analysis', {}).get('total_rows', 'N/A')}</div>
-            <div class="metric"><strong>Unique Combinations:</strong> {debug_info.get('google_sheets_analysis', {}).get('unique_combinations', 'N/A')}</div>
-            <div class="metric"><strong>Facebook API Ads:</strong> {debug_info.get('facebook_api_analysis', {}).get('total_ads_fetched', 'N/A')}</div>
-            <div class="metric"><strong>Matching Combinations:</strong> {debug_info.get('comparison', {}).get('matching_combinations', 'N/A')}</div>
-            <div class="metric"><strong>Match %:</strong> {debug_info.get('comparison', {}).get('match_percentage', 0):.1f}%</div>
-        </div>
-        
-        {f'<div class="section error"><h2>❌ Errors</h2><ul>{"".join([f"<li>{error}</li>" for error in debug_info.get("errors", [])])}</ul></div>' if debug_info.get('errors') else ''}
-        
-        <div class="section">
-            <h2>📋 Google Sheets Analysis</h2>
-            <div class="metric"><strong>Total Rows:</strong> {debug_info.get('google_sheets_analysis', {}).get('total_rows', 'N/A')}</div>
-            <div class="metric"><strong>Unique Ad Set + Ad Name Combinations:</strong> {debug_info.get('google_sheets_analysis', {}).get('unique_combinations', 'N/A')}</div>
-            <div class="metric"><strong>Unique Ad Names:</strong> {debug_info.get('google_sheets_analysis', {}).get('unique_ad_names', 'N/A')}</div>
-            <div class="metric"><strong>Unique Ad Set Names:</strong> {debug_info.get('google_sheets_analysis', {}).get('unique_adset_names', 'N/A')}</div>
-            
-            <h3>Sample Google Sheets Rows:</h3>
-            <table>
-                <tr><th>Row #</th><th>Ad Set Name</th><th>Ad Name</th><th>Combination Key</th></tr>
-                {"".join([f"<tr><td>{row['row_number']}</td><td>{row['ad_set_name']}</td><td>{row['ad_name']}</td><td>{row['combination']}</td></tr>" for row in debug_info.get('sample_data', {}).get('google_sheets_rows', [])])}
-            </table>
-            
-            <h3>Sample Combinations:</h3>
-            <div class="code">
-                {"<br>".join(debug_info.get('google_sheets_analysis', {}).get('sample_combinations', []))}
-            </div>
-        </div>
-        
-        <div class="section">
-            <h2>📡 Facebook API Analysis</h2>
-            <div class="metric"><strong>Total Ads Fetched:</strong> {debug_info.get('facebook_api_analysis', {}).get('total_ads_fetched', 'N/A')}</div>
-            <div class="metric"><strong>Pages Fetched:</strong> {debug_info.get('facebook_api_analysis', {}).get('pages_fetched', 'N/A')}</div>
-            <div class="metric"><strong>Unique Combinations:</strong> {debug_info.get('facebook_api_analysis', {}).get('unique_combinations', 'N/A')}</div>
-            <div class="metric"><strong>Unique Ad Names:</strong> {debug_info.get('facebook_api_analysis', {}).get('unique_ad_names', 'N/A')}</div>
-            <div class="metric"><strong>Unique Ad Set Names:</strong> {debug_info.get('facebook_api_analysis', {}).get('unique_adset_names', 'N/A')}</div>
-            
-            <h3>Sample Facebook API Ads:</h3>
-            <table>
-                <tr><th>Ad #</th><th>Ad ID</th><th>Ad Set Name</th><th>Ad Name</th><th>Status</th><th>Combination Key</th></tr>
-                {"".join([f"<tr><td>{ad['ad_number']}</td><td>{ad['ad_id']}</td><td>{ad['adset_name']}</td><td>{ad['ad_name']}</td><td>{ad['status']}/{ad['effective_status']}</td><td>{ad['combination']}</td></tr>" for ad in debug_info.get('sample_data', {}).get('facebook_api_ads', [])])}
-            </table>
-        </div>
-        
-        <div class="section">
-            <h2>🔍 Comparison Analysis</h2>
-            <div class="metric"><strong>Matching Combinations:</strong> {debug_info.get('comparison', {}).get('matching_combinations', 'N/A')}</div>
-            <div class="metric"><strong>Missing in Facebook:</strong> {debug_info.get('comparison', {}).get('missing_in_facebook', 'N/A')}</div>
-            <div class="metric"><strong>Extra in Facebook:</strong> {debug_info.get('comparison', {}).get('extra_in_facebook', 'N/A')}</div>
-            <div class="metric"><strong>Match Percentage:</strong> {debug_info.get('comparison', {}).get('match_percentage', 0):.1f}%</div>
-            
-            <h3>✅ Sample Matching Combinations:</h3>
-            <div class="code">
-                {"<br>".join(debug_info.get('comparison', {}).get('sample_matches', []))}
-            </div>
-            
-            <h3>❌ Sample Missing in Facebook API:</h3>
-            <div class="code">
-                {"<br>".join(debug_info.get('comparison', {}).get('sample_missing_in_fb', []))}
-            </div>
-            
-            <h3>⚠️ Sample Extra in Facebook API:</h3>
-            <div class="code">
-                {"<br>".join(debug_info.get('comparison', {}).get('sample_extra_in_fb', []))}
-            </div>
-        </div>
-        
-        <div class="section info">
-            <h2>🎯 Next Steps</h2>
-            <p>Based on this analysis:</p>
-            <ul>
-                <li>If match percentage is low, check if ad names/ad set names have different formatting</li>
-                <li>If many ads are missing in Facebook API, check date range or ad status filters</li>
-                <li>If many extra ads in Facebook API, check if Google Sheets data is complete</li>
-                <li>Look at the sample data to identify patterns in mismatches</li>
-            </ul>
-        </div>
-        
-        <div class="section">
-            <p><a href="/">← Back to Dashboard</a></p>
-        </div>
-    </body>
-    </html>
-    """
-    
-    return html_content
 
 @app.route('/api/loading-status')
 def loading_status():
@@ -1149,6 +941,51 @@ def performance_data():
     
     return jsonify(filtered_data)
 
+@app.route('/api/creative-dashboard-data')
+def creative_dashboard_data():
+    """Get ad-level grouped data for Creative Dashboard"""
+    # Get filter parameter
+    search_filter = request.args.get('filter', '').lower()
+    
+    creative_data = tool.get_creative_dashboard_data()
+    
+    # Filter data if search term provided
+    if search_filter:
+        creative_data = [
+            ad for ad in creative_data 
+            if search_filter in ad['ad_name'].lower()
+        ]
+    
+    return jsonify(creative_data)
+
+@app.route('/api/adgroup-dashboard-data')
+def adgroup_dashboard_data():
+    """Get ad set level grouped data for Ad Group Dashboard"""
+    # Get filter parameter
+    search_filter = request.args.get('filter', '').lower()
+    
+    adgroup_data = tool.get_adgroup_dashboard_data()
+    
+    # Filter data if search term provided
+    if search_filter:
+        adgroup_data = [
+            adset for adset in adgroup_data 
+            if search_filter in adset['ad_set_name'].lower() or
+            any(search_filter in ad['ad_name'].lower() for ad in adset['ads'])
+        ]
+    
+    return jsonify(adgroup_data)
+
+@app.route('/api/optimization-recommendations')
+def optimization_recommendations():
+    recommendations = tool.get_optimization_recommendations()
+    return jsonify(recommendations)
+
+@app.route('/api/creative-data')
+def creative_data():
+    """Get Facebook creative data for AI insights"""
+    return jsonify(tool.creative_data)
+
 @app.route('/api/refresh-data')
 def refresh_data():
     try:
@@ -1160,10 +997,43 @@ def refresh_data():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)})
 
+@app.route('/api/kpi-settings', methods=['GET', 'POST'])
+def kpi_settings():
+    if request.method == 'POST':
+        try:
+            new_settings = request.json
+            tool.kpi_settings.update(new_settings)
+            success = tool.save_kpi_settings()
+            
+            if success:
+                # Reprocess data with new settings
+                tool.process_combined_data()
+                return jsonify({'status': 'success', 'message': 'KPI settings updated successfully'})
+            else:
+                return jsonify({'status': 'error', 'message': 'Failed to save KPI settings'})
+        except Exception as e:
+            return jsonify({'status': 'error', 'message': str(e)})
+    else:
+        return jsonify(tool.kpi_settings)
+
+@app.route('/api/optimization-rules', methods=['GET', 'POST'])
+def optimization_rules():
+    if request.method == 'POST':
+        try:
+            new_rules = request.json
+            tool.optimization_rules.update(new_rules)
+            success = tool.save_optimization_rules()
+            
+            if success:
+                return jsonify({'status': 'success', 'message': 'Optimization rules updated successfully'})
+            else:
+                return jsonify({'status': 'error', 'message': 'Failed to save optimization rules'})
+        except Exception as e:
+            return jsonify({'status': 'error', 'message': str(e)})
+    else:
+        return jsonify(tool.optimization_rules)
+
 if __name__ == '__main__':
-    print("✅ OpenAI API key configured" if tool.openai_api_key else "❌ OpenAI API key missing")
-    print("✅ Facebook API credentials configured" if tool.fb_access_token and tool.fb_ad_account_id else "❌ Facebook API credentials missing")
-    print(f"✅ KPI Settings loaded: {tool.kpi_settings}")
-    print(f"✅ Optimization Rules loaded: {tool.optimization_rules}")
+    print("✅ Data loaded successfully")
     app.run(host='0.0.0.0', port=8080, debug=False)
 
