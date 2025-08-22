@@ -1,13 +1,13 @@
-Flask==2.3.3
-gunicorn==21.2.0
+Flask==2.3.2
+gunicorn==20.1.0
 requests==2.31.0
-google-auth==2.23.3
-google-auth-oauthlib==1.1.0
-google-auth-httplib2==0.1.1
-google-api-python-client==2.103.0
-pandas==2.1.1
-numpy==1.25.2
+google-auth==2.17.3
+google-auth-oauthlib==1.0.0
+google-auth-httplib2==0.1.0
+google-api-python-client==2.88.0
+pandas==2.0.3
+numpy==1.24.3
 openpyxl==3.1.2
 python-dotenv==1.0.0
-Werkzeug==2.3.7
+Werkzeug==2.3.6
 
