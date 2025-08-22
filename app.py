@@ -158,6 +158,12 @@ class FacebookOptimizationTool:
         try:
             if not self.fb_access_token or not self.fb_ad_account_id:
                 print("⚠️ Facebook API credentials not available for creative data")
+                self.creative_data = {
+                    'adsets': [],
+                    'ads': [],
+                    'last_updated': datetime.now().isoformat(),
+                    'error': 'No Facebook API credentials'
+                }
                 return
             
             self.loading_status['facebook_creative_loading'] = True
@@ -185,6 +191,12 @@ class FacebookOptimizationTool:
             print(f"❌ Facebook creative data loading error: {e}")
             self.loading_status['facebook_creative_loading'] = False
             self.loading_status['error_message'] = str(e)
+            self.creative_data = {
+                'adsets': [],
+                'ads': [],
+                'last_updated': datetime.now().isoformat(),
+                'error': str(e)
+            }
 
     def load_facebook_adsets_creative(self):
         """Load ad set level creative data from Facebook API"""
@@ -194,18 +206,19 @@ class FacebookOptimizationTool:
             params = {
                 'access_token': self.fb_access_token,
                 'fields': 'id,name,targeting,optimization_goal,billing_event,bid_amount,daily_budget,lifetime_budget,start_time,end_time,status,effective_status',
-                'limit': 100
+                'limit': 50,
+                'time_range': '{"since":"2025-06-01","until":"2025-08-20"}'
             }
             
             adsets_data = []
             after_cursor = None
             page_count = 0
             
-            while page_count < 10:  # Limit to prevent timeout
+            while page_count < 5:  # Limit to prevent timeout
                 if after_cursor:
                     params['after'] = after_cursor
                 
-                response = requests.get(url, params=params, timeout=30)
+                response = requests.get(url, params=params, timeout=15)
                 
                 if response.status_code == 200:
                     data = response.json()
@@ -225,7 +238,7 @@ class FacebookOptimizationTool:
                     if not after_cursor:
                         break
                         
-                    time.sleep(0.2)  # Rate limit respect
+                    time.sleep(0.5)  # Rate limit respect
                     
                 else:
                     print(f"⚠️ Facebook adsets API error: {response.status_code}")
@@ -245,18 +258,19 @@ class FacebookOptimizationTool:
             params = {
                 'access_token': self.fb_access_token,
                 'fields': 'id,name,adset{id,name},creative{id,title,body,image_url,video_id,url_tags,object_story_spec},status,effective_status',
-                'limit': 100
+                'limit': 50,
+                'time_range': '{"since":"2025-06-01","until":"2025-08-20"}'
             }
             
             ads_data = []
             after_cursor = None
             page_count = 0
             
-            while page_count < 10:  # Limit to prevent timeout
+            while page_count < 5:  # Limit to prevent timeout
                 if after_cursor:
                     params['after'] = after_cursor
                 
-                response = requests.get(url, params=params, timeout=30)
+                response = requests.get(url, params=params, timeout=15)
                 
                 if response.status_code == 200:
                     data = response.json()
@@ -267,19 +281,23 @@ class FacebookOptimizationTool:
                     
                     # Process creative data
                     for ad in ads:
-                        creative = ad.get('creative', {})
-                        if creative:
-                            # Extract creative elements
-                            ad['headline'] = creative.get('title', '')
-                            ad['text'] = creative.get('body', '')
-                            ad['image_url'] = creative.get('image_url', '')
-                            ad['video_id'] = creative.get('video_id', '')
-                            
-                            # Extract landing page URL from object_story_spec
-                            object_story = creative.get('object_story_spec', {})
-                            link_data = object_story.get('link_data', {})
-                            ad['landing_page_url'] = link_data.get('link', '')
-                            ad['call_to_action'] = link_data.get('call_to_action', {}).get('type', '')
+                        try:
+                            creative = ad.get('creative', {})
+                            if creative:
+                                # Extract creative elements
+                                ad['headline'] = creative.get('title', '')
+                                ad['text'] = creative.get('body', '')
+                                ad['image_url'] = creative.get('image_url', '')
+                                ad['video_id'] = creative.get('video_id', '')
+                                
+                                # Extract landing page URL from object_story_spec
+                                object_story = creative.get('object_story_spec', {})
+                                link_data = object_story.get('link_data', {})
+                                ad['landing_page_url'] = link_data.get('link', '')
+                                ad['call_to_action'] = link_data.get('call_to_action', {}).get('type', '')
+                        except Exception as e:
+                            print(f"⚠️ Error processing ad creative: {e}")
+                            continue
                     
                     ads_data.extend(ads)
                     page_count += 1
@@ -292,7 +310,7 @@ class FacebookOptimizationTool:
                     if not after_cursor:
                         break
                         
-                    time.sleep(0.2)  # Rate limit respect
+                    time.sleep(0.5)  # Rate limit respect
                     
                 else:
                     print(f"⚠️ Facebook ads API error: {response.status_code}")
@@ -311,7 +329,7 @@ class FacebookOptimizationTool:
                 return default
             # Handle string numbers with commas
             if isinstance(value, str):
-                value = value.replace(',', '')
+                value = value.replace(',', '').replace('$', '')
             return float(value)
         except (ValueError, TypeError):
             return default
@@ -323,7 +341,7 @@ class FacebookOptimizationTool:
                 return default
             # Handle string numbers with commas
             if isinstance(value, str):
-                value = value.replace(',', '')
+                value = value.replace(',', '').replace('$', '')
             return int(float(value))
         except (ValueError, TypeError):
             return default
@@ -335,26 +353,32 @@ class FacebookOptimizationTool:
             
             print(f"🔄 Processing Google Sheets data: {len(self.web_data)} web, {len(self.attr_data)} attr, {len(self.fb_data)} fb")
             
-            # Create lookup dictionaries
+            # Create lookup dictionaries with proper key handling
             web_lookup = {}
             for row in self.web_data:
-                ad_set_name = str(row.get('Facebook Adset Name', '')).strip()
-                ad_name = str(row.get('Facebook Ad Name', '')).strip()
-                if ad_set_name and ad_name:
-                    key = f"{ad_set_name}|||{ad_name}"
-                    if key not in web_lookup:
-                        web_lookup[key] = []
-                    web_lookup[key].append(row)
+                try:
+                    ad_set_name = str(row.get('Facebook Adset Name', '')).strip()
+                    ad_name = str(row.get('Facebook Ad Name', '')).strip()
+                    if ad_set_name and ad_name and ad_set_name.lower() != 'total' and ad_name.lower() != 'total':
+                        key = f"{ad_set_name}|||{ad_name}"
+                        if key not in web_lookup:
+                            web_lookup[key] = []
+                        web_lookup[key].append(row)
+                except Exception as e:
+                    continue
             
             attr_lookup = {}
             for row in self.attr_data:
-                ad_set_name = str(row.get('Facebook Adset Name', '')).strip()
-                ad_name = str(row.get('Facebook Ad Name', '')).strip()
-                if ad_set_name and ad_name:
-                    key = f"{ad_set_name}|||{ad_name}"
-                    if key not in attr_lookup:
-                        attr_lookup[key] = []
-                    attr_lookup[key].append(row)
+                try:
+                    ad_set_name = str(row.get('Facebook Adset Name', '')).strip()
+                    ad_name = str(row.get('Facebook Ad Name', '')).strip()
+                    if ad_set_name and ad_name and ad_set_name.lower() != 'total' and ad_name.lower() != 'total':
+                        key = f"{ad_set_name}|||{ad_name}"
+                        if key not in attr_lookup:
+                            attr_lookup[key] = []
+                        attr_lookup[key].append(row)
+                except Exception as e:
+                    continue
             
             print(f"🔍 Created lookups: {len(web_lookup)} web, {len(attr_lookup)} attr")
             
@@ -398,7 +422,7 @@ class FacebookOptimizationTool:
                     # Calculate funnel metrics
                     funnel_start_rate = (web_unique_count / impressions * 100) if impressions > 0 else 0
                     booking_conversion_rate = (total_bookings / web_unique_count * 100) if web_unique_count > 0 else 0
-                    completion_rate = 0.45  # Default 45% as specified
+                    completion_rate = 45.0  # Default 45% as specified
                     
                     # Success criteria evaluation
                     success_criteria = [
@@ -473,9 +497,9 @@ class FacebookOptimizationTool:
             avg_cpa = (total_spend / total_bookings) if total_bookings > 0 else 0
             
             # Calculate average rates
-            avg_completion_rate = sum(ad['completion_rate'] for ad in self.performance_data) / total_ads * 100
-            avg_funnel_start_rate = sum(ad['funnel_start_rate'] for ad in self.performance_data) / total_ads
-            avg_booking_rate = sum(ad['booking_conversion_rate'] for ad in self.performance_data) / total_ads
+            avg_completion_rate = sum(ad['completion_rate'] for ad in self.performance_data) / total_ads if total_ads > 0 else 0
+            avg_funnel_start_rate = sum(ad['funnel_start_rate'] for ad in self.performance_data) / total_ads if total_ads > 0 else 0
+            avg_booking_rate = sum(ad['booking_conversion_rate'] for ad in self.performance_data) / total_ads if total_ads > 0 else 0
             
             # Calculate ROI
             roi = ((total_revenue - total_offer_spend - total_spend) / total_revenue * 100) if total_revenue > 0 else 0
@@ -549,6 +573,7 @@ class FacebookOptimizationTool:
                 total_revenue = sum(ad['revenue'] for ad in ads)
                 total_bookings = sum(ad['bookings'] for ad in ads)
                 total_web_unique = sum(ad['web_unique_count'] for ad in ads)
+                total_offer_spend = sum(ad['offer_spend'] for ad in ads)
                 
                 # Calculate aggregated metrics
                 ctr = (total_clicks / total_impressions * 100) if total_impressions > 0 else 0
@@ -558,7 +583,7 @@ class FacebookOptimizationTool:
                 roas = (total_revenue / total_spend) if total_spend > 0 else 0
                 funnel_start_rate = (total_web_unique / total_impressions * 100) if total_impressions > 0 else 0
                 booking_conversion_rate = (total_bookings / total_web_unique * 100) if total_web_unique > 0 else 0
-                completion_rate = 0.45  # Default
+                completion_rate = 45.0  # Default
                 
                 # Success criteria evaluation
                 success_criteria = [
@@ -584,6 +609,7 @@ class FacebookOptimizationTool:
                     'cpm': cpm,
                     'revenue': total_revenue,
                     'bookings': total_bookings,
+                    'offer_spend': total_offer_spend,
                     'cpa': cpa,
                     'roas': roas,
                     'funnel_start_rate': funnel_start_rate,
@@ -620,6 +646,7 @@ class FacebookOptimizationTool:
                 total_revenue = sum(ad['revenue'] for ad in ads)
                 total_bookings = sum(ad['bookings'] for ad in ads)
                 total_web_unique = sum(ad['web_unique_count'] for ad in ads)
+                total_offer_spend = sum(ad['offer_spend'] for ad in ads)
                 
                 # Calculate aggregated metrics
                 ctr = (total_clicks / total_impressions * 100) if total_impressions > 0 else 0
@@ -629,7 +656,7 @@ class FacebookOptimizationTool:
                 roas = (total_revenue / total_spend) if total_spend > 0 else 0
                 funnel_start_rate = (total_web_unique / total_impressions * 100) if total_impressions > 0 else 0
                 booking_conversion_rate = (total_bookings / total_web_unique * 100) if total_web_unique > 0 else 0
-                completion_rate = 0.45  # Default
+                completion_rate = 45.0  # Default
                 
                 # Count successful ads in this ad set
                 successful_ads = sum(1 for ad in ads if ad['success_count'] >= 6)
@@ -649,6 +676,7 @@ class FacebookOptimizationTool:
                         'cpm': ad['cpm'],
                         'revenue': ad['revenue'],
                         'bookings': ad['bookings'],
+                        'offer_spend': ad['offer_spend'],
                         'cpa': ad['cpa'],
                         'roas': ad['roas'],
                         'funnel_start_rate': ad['funnel_start_rate'],
@@ -670,6 +698,7 @@ class FacebookOptimizationTool:
                     'cpm': cpm,
                     'revenue': total_revenue,
                     'bookings': total_bookings,
+                    'offer_spend': total_offer_spend,
                     'cpa': cpa,
                     'roas': roas,
                     'funnel_start_rate': funnel_start_rate,
