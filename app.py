@@ -21,6 +21,11 @@ class FacebookOptimizationTool:
         self.fb_ad_account_id = os.getenv('FB_AD_ACCOUNT_ID')
         self.google_credentials = os.getenv('GOOGLE_CREDENTIALS_JSON')
         
+        # Google Sheets IDs for the 3 separate spreadsheets
+        self.fb_spend_sheet_id = "1BG--tds9na-WC3Dx3t0DTuWcmZAVYbBsvWCUJ-yFQTk"
+        self.attribution_sheet_id = "1k49FsG1hAO3L-CGq1UjBPUxuDA6ZLMX0FCSMJQzmUCQ"
+        self.web_pages_sheet_id = "1e_eimaB0WTMOcWalCwSnMGFCZ5fDG1y7jpZF-qBNfdA"
+        
         # Initialize KPI settings with defaults
         self.kpi_settings = {
             'ctr_threshold': 0.30,
@@ -158,10 +163,9 @@ class FacebookOptimizationTool:
             credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
             self.gc = gspread.authorize(credentials)
             
-            # Test the connection
+            # Test the connection with one of the actual spreadsheets
             try:
-                # Try to access the spreadsheet to verify credentials work
-                test_sheet = self.gc.open("Opencare Facebook Ads Performance Tracker")
+                test_sheet = self.gc.open_by_key(self.fb_spend_sheet_id)
                 print("✅ Google Sheets API initialized and tested")
                 return True
             except Exception as e:
@@ -196,7 +200,7 @@ class FacebookOptimizationTool:
             print(f"❌ Data loading error: {e}")
 
     def load_google_sheets_data(self):
-        """Load data from Google Sheets with better error handling"""
+        """Load data from the 3 separate Google Sheets"""
         try:
             if not self.gc:
                 print("❌ Google Sheets not initialized")
@@ -204,7 +208,7 @@ class FacebookOptimizationTool:
             
             # Web Pages data
             try:
-                web_sheet = self.gc.open("Opencare Facebook Ads Performance Tracker").worksheet("Web Pages")
+                web_sheet = self.gc.open_by_key(self.web_pages_sheet_id).sheet1  # First sheet
                 web_data = web_sheet.get_all_records()
                 self.web_data = [row for row in web_data if row.get('Web Pages UTM Content') and str(row.get('Web Pages UTM Content')).lower() != 'total']
                 print(f"✅ Loaded {len(self.web_data)} rows from web_pages")
@@ -214,7 +218,7 @@ class FacebookOptimizationTool:
             
             # Attribution data
             try:
-                attr_sheet = self.gc.open("Opencare Facebook Ads Performance Tracker").worksheet("Attribution")
+                attr_sheet = self.gc.open_by_key(self.attribution_sheet_id).sheet1  # First sheet
                 attr_data = attr_sheet.get_all_records()
                 self.attr_data = [row for row in attr_data if row.get('Attribution UTM Content') and str(row.get('Attribution UTM Content')).lower() != 'total']
                 print(f"✅ Loaded {len(self.attr_data)} rows from attribution")
@@ -224,7 +228,7 @@ class FacebookOptimizationTool:
             
             # Facebook Spend data
             try:
-                fb_sheet = self.gc.open("Opencare Facebook Ads Performance Tracker").worksheet("Facebook Spend")
+                fb_sheet = self.gc.open_by_key(self.fb_spend_sheet_id).sheet1  # First sheet
                 fb_data = fb_sheet.get_all_records()
                 self.fb_data = [row for row in fb_data if row.get('Facebook Ad Name') and str(row.get('Facebook Ad Name')).lower() != 'total']
                 print(f"✅ Loaded {len(self.fb_data)} rows from fb_spend")
