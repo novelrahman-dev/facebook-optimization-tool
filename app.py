@@ -104,11 +104,31 @@ class FacebookOptimizationTool:
                 print("❌ Facebook API not configured")
                 return {}
             
-            # Get date range (June 1 to current)
-            start_date = "2025-06-01"
-            end_date = datetime.now().strftime("%Y-%m-%d")
+            # Get date range synchronized with Google Docs update schedule (10 AM and 10 PM EST)
+            import pytz
+            est = pytz.timezone('US/Eastern')
+            now_est = datetime.now(est)
             
-            url = f"https://graph.facebook.com/v18.0/act_{self.fb_ad_account_id}/ads"
+            # Determine the last update time based on current EST time
+            if now_est.hour >= 22:  # After 10 PM EST
+                # Use today's date (data updated at 10 PM)
+                end_date = now_est.strftime("%Y-%m-%d")
+            elif now_est.hour >= 10:  # Between 10 AM and 10 PM EST
+                # Use today's date (data updated at 10 AM)
+                end_date = now_est.strftime("%Y-%m-%d")
+            else:  # Before 10 AM EST
+                # Use yesterday's date (last update was yesterday 10 PM)
+                yesterday = now_est - timedelta(days=1)
+                end_date = yesterday.strftime("%Y-%m-%d")
+            
+            start_date = "2025-06-01"
+            
+            # Handle ad account ID format - remove act_ prefix if present
+            ad_account_id = self.fb_ad_account_id
+            if ad_account_id.startswith('act_'):
+                ad_account_id = ad_account_id[4:]  # Remove 'act_' prefix
+            
+            url = f"https://graph.facebook.com/v18.0/act_{ad_account_id}/ads"
             params = {
                 'access_token': self.fb_access_token,
                 'fields': 'name,adset{name},insights{impressions,clicks}',
