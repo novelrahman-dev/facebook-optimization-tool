@@ -1,9 +1,8 @@
 import os
 import json
+import pandas as pd
 from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify, request
-import gspread
-from google.oauth2.service_account import Credentials
 
 app = Flask(__name__)
 
@@ -11,76 +10,24 @@ class FacebookDashboard:
     def __init__(self):
         self.data = []
         self.loading_status = {
-            'google_sheets_loaded': False,
+            'data_loaded': False,
             'data_processed': False,
             'last_updated': None,
             'error_message': None
         }
         
-        # Initialize Google Sheets
-        self.init_google_sheets()
+        # Google Sheets CSV URLs
+        self.FB_SPEND_URL = "https://docs.google.com/spreadsheets/d/1BG--tds9na-WC3Dx3t0DTuWcmZAVYbBsvWCUJ-yFQTk/export?format=csv&gid=341667505"
+        self.ATTRIBUTION_URL = "https://docs.google.com/spreadsheets/d/1k49FsG1hAO3L-CGq1UjBPUxuDA6ZLMX0FCSMJQzmUCQ/export?format=csv&gid=129436906"
+        self.WEB_PAGES_URL = "https://docs.google.com/spreadsheets/d/1e_eimaB0WTMOcWalCwSnMGFCZ5fDG1y7jpZF-qBNfdA/export?format=csv&gid=660938596"
         
         # Load and process data
         self.load_and_process_data()
     
-    def init_google_sheets(self):
-        """Initialize Google Sheets API"""
-        try:
-            # Try GOOGLE_CREDENTIALS_JSON first (from working version)
-            google_credentials = os.getenv('GOOGLE_CREDENTIALS_JSON')
-            if not google_credentials:
-                # Fallback to GOOGLE_SHEETS_CREDENTIALS
-                google_credentials = os.getenv('GOOGLE_SHEETS_CREDENTIALS')
-            
-            if not google_credentials:
-                raise Exception("Neither GOOGLE_CREDENTIALS_JSON nor GOOGLE_SHEETS_CREDENTIALS environment variable found")
-            
-            creds_dict = json.loads(google_credentials)
-            scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-            creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-            self.gc = gspread.authorize(creds)
-            
-            print("✅ Google Sheets API initialized")
-            
-        except Exception as e:
-            print(f"❌ Error initializing Google Sheets: {e}")
-            self.gc = None
-    
-    def load_google_sheets_data(self):
-        """Load data from Google Sheets"""
-        try:
-            if not self.gc:
-                raise Exception("Google Sheets not initialized")
-            
-            print("🔄 Loading data from Google Sheets...")
-            
-            # Load FB Spend data
-            fb_spend_sheet = self.gc.open_by_key('1BG--tds9na-WC3Dx3t0DTuWcmZAVYbBsvWCUJ-yFQTk').worksheet('fb_spend')
-            fb_spend_data = fb_spend_sheet.get_all_records()
-            print(f"✅ Loaded {len(fb_spend_data)} rows from fb_spend")
-            
-            # Load Attribution data
-            attribution_sheet = self.gc.open_by_key('1k49FsG1hAO3L-CGq1UjBPUxuDA6ZLMX0FCSMJQzmUCQ').worksheet('attribution')
-            attribution_data = attribution_sheet.get_all_records()
-            print(f"✅ Loaded {len(attribution_data)} rows from attribution")
-            
-            # Load Web Pages data
-            web_pages_sheet = self.gc.open_by_key('1e_eimaB0WTMOcWalCwSnMGFCZ5fDG1y7jpZF-qBNfdA').worksheet('web_pages')
-            web_pages_data = web_pages_sheet.get_all_records()
-            print(f"✅ Loaded {len(web_pages_data)} rows from web_pages")
-            
-            self.loading_status['google_sheets_loaded'] = True
-            return fb_spend_data, attribution_data, web_pages_data
-            
-        except Exception as e:
-            print(f"❌ Error loading Google Sheets data: {e}")
-            self.loading_status['error_message'] = str(e)
-            return [], [], []
-    
     def clean_numeric(self, value):
         """Clean and convert value to float"""
         try:
-            if value is None or value == '':
+            if value is None or value == '' or pd.isna(value):
                 return 0.0
             # Remove commas and convert to float
             if isinstance(value, str):
@@ -89,27 +36,49 @@ class FacebookDashboard:
         except:
             return 0.0
     
+    def load_google_sheets_data(self):
+        """Load data from Google Sheets using CSV URLs"""
+        try:
+            print("🔄 Loading data from Google Sheets...")
+            
+            # Load data using pandas
+            fb_spend_df = pd.read_csv(self.FB_SPEND_URL)
+            attribution_df = pd.read_csv(self.ATTRIBUTION_URL)
+            web_pages_df = pd.read_csv(self.WEB_PAGES_URL)
+            
+            print(f"✅ Loaded {len(fb_spend_df)} rows from fb_spend")
+            print(f"✅ Loaded {len(attribution_df)} rows from attribution")
+            print(f"✅ Loaded {len(web_pages_df)} rows from web_pages")
+            
+            self.loading_status['data_loaded'] = True
+            return fb_spend_df, attribution_df, web_pages_df
+            
+        except Exception as e:
+            print(f"❌ Error loading Google Sheets data: {e}")
+            self.loading_status['error_message'] = str(e)
+            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+    
     def load_and_process_data(self):
         """Load and process all data"""
         try:
             # Load Google Sheets data
-            fb_data, attr_data, web_data = self.load_google_sheets_data()
+            fb_df, attr_df, web_df = self.load_google_sheets_data()
             
-            if not fb_data:
+            if fb_df.empty:
                 print("❌ No Facebook spend data loaded")
                 return
             
-            print(f"🔄 Processing data: {len(fb_data)} fb, {len(attr_data)} attr, {len(web_data)} web")
+            print(f"🔄 Processing data: {len(fb_df)} fb, {len(attr_df)} attr, {len(web_df)} web")
             
             # Create lookup dictionaries for faster matching
             attr_lookup = {}
-            for row in attr_data:
+            for _, row in attr_df.iterrows():
                 ad_name = str(row.get('Facebook Ad Name', '')).strip().lower()
                 if ad_name and ad_name != 'total':
                     attr_lookup[ad_name] = row
             
             web_lookup = {}
-            for row in web_data:
+            for _, row in web_df.iterrows():
                 ad_name = str(row.get('Facebook Ad Name', '')).strip().lower()
                 if ad_name and ad_name != 'total':
                     web_lookup[ad_name] = row
@@ -117,7 +86,7 @@ class FacebookDashboard:
             combined_data = []
             
             # Process each Facebook spend record
-            for fb_row in fb_data:
+            for _, fb_row in fb_df.iterrows():
                 try:
                     ad_name = str(fb_row.get('Facebook Ad Name', '')).strip()
                     ad_set_name = str(fb_row.get('Facebook Ad Set Name', '')).strip()
@@ -137,15 +106,22 @@ class FacebookDashboard:
                     link_clicks = self.clean_numeric(fb_row.get('Facebook Link Clicks', 0))
                     
                     # Attribution data
-                    revenue = self.clean_numeric(attr_row.get('Attribution Attibuted Total Revenue (Predicted) (USD)', 0))
-                    nprs = self.clean_numeric(attr_row.get('Attribution Attributed NPRs', 0))
-                    offer_spend = self.clean_numeric(attr_row.get('Attribution Attibuted Offer Spend (Predicted) (USD)', 0))
-                    pas_rate = self.clean_numeric(attr_row.get('Attribution Attibuted PAS (Predicted)', 0.479))
+                    if isinstance(attr_row, pd.Series):
+                        revenue = self.clean_numeric(attr_row.get('Attribution Attibuted Total Revenue (Predicted) (USD)', 0))
+                        nprs = self.clean_numeric(attr_row.get('Attribution Attributed NPRs', 0))
+                        offer_spend = self.clean_numeric(attr_row.get('Attribution Attibuted Offer Spend (Predicted) (USD)', 0))
+                        pas_rate = self.clean_numeric(attr_row.get('Attribution Attibuted PAS (Predicted)', 0.479))
+                    else:
+                        revenue = nprs = offer_spend = 0
+                        pas_rate = 0.479
                     
                     # Web data
-                    funnel_starts = self.clean_numeric(web_row.get('Web Pages Unique Count of Sessions with Funnel Starts', 0))
-                    survey_completions = self.clean_numeric(web_row.get('Web Pages Unique Count of Sessions with Match Results', 0))
-                    checkout_starts = self.clean_numeric(web_row.get('Count of Sessions with Checkout Started (V2 included)', 0))
+                    if isinstance(web_row, pd.Series):
+                        funnel_starts = self.clean_numeric(web_row.get('Web Pages Unique Count of Sessions with Funnel Starts', 0))
+                        survey_completions = self.clean_numeric(web_row.get('Web Pages Unique Count of Sessions with Match Results', 0))
+                        checkout_starts = self.clean_numeric(web_row.get('Count of Sessions with Checkout Started (V2 included)', 0))
+                    else:
+                        funnel_starts = survey_completions = checkout_starts = 0
                     
                     # Calculate metrics
                     ctr = (link_clicks / impressions * 100) if impressions > 0 else 0
