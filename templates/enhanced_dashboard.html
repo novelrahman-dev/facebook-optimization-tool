@@ -1014,8 +1014,16 @@
                         <div class="value">${data.total_clicks.toLocaleString()}</div>
                     </div>
                     <div class="summary-card">
-                        <h3>Average CTR</h3>
-                        <div class="value">${data.avg_ctr.toFixed(2)}%</div>
+                        <h3>Total Bookings</h3>
+                        <div class="value">${data.total_bookings.toLocaleString()}</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Total Offer Spend</h3>
+                        <div class="value">$${data.total_offer_spend.toLocaleString()}</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Overall CTR</h3>
+                        <div class="value">${data.overall_ctr.toFixed(2)}%</div>
                     </div>
                     <div class="summary-card">
                         <h3>Average CPC</h3>
@@ -1026,8 +1034,28 @@
                         <div class="value">$${data.avg_cpm.toFixed(2)}</div>
                     </div>
                     <div class="summary-card">
-                        <h3>Average ROAS</h3>
-                        <div class="value">${data.avg_roas.toFixed(2)}</div>
+                        <h3>Overall ROAS</h3>
+                        <div class="value">${data.overall_roas.toFixed(2)}</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Average CPA</h3>
+                        <div class="value">$${data.avg_cpa.toFixed(2)}</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Average Completion %</h3>
+                        <div class="value">${(data.avg_completion_rate * 100).toFixed(1)}%</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Average Funnel Start %</h3>
+                        <div class="value">${data.avg_funnel_start_rate.toFixed(1)}%</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Average Booking %</h3>
+                        <div class="value">${data.avg_booking_rate.toFixed(1)}%</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>ROI</h3>
+                        <div class="value">${data.roi.toFixed(1)}%</div>
                     </div>
                     <div class="summary-card">
                         <h3>Successful Ads</h3>
