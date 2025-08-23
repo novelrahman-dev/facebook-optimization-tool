@@ -452,33 +452,36 @@ class FacebookOptimizationTool:
         if not self.data:
             return {}
         
-        # Get totals from Google Sheets (last rows) - matching corrected_final_kpis.py
+        # Use CSV URLs like corrected_final_kpis.py to get accurate totals
         try:
-            fb_data, attr_data, web_data = self.load_google_sheets_data()
+            import pandas as pd
             
-            # Get totals from last rows (these are lists of dictionaries)
-            fb_totals = fb_data[-1] if fb_data else {}
-            attr_totals = attr_data[-1] if attr_data else {}
-            web_totals = web_data[-1] if web_data else {}
+            # Google Sheets CSV URLs
+            FB_SPEND_URL = "https://docs.google.com/spreadsheets/d/1BG--tds9na-WC3Dx3t0DTuWcmZAVYbBsvWCUJ-yFQTk/export?format=csv&gid=341667505"
+            ATTRIBUTION_URL = "https://docs.google.com/spreadsheets/d/1k49FsG1hAO3L-CGq1UjBPUxuDA6ZLMX0FCSMJQzmUCQ/export?format=csv&gid=129436906"
+            WEB_PAGES_URL = "https://docs.google.com/spreadsheets/d/1e_eimaB0WTMOcWalCwSnMGFCZ5fDG1y7jpZF-qBNfdA/export?format=csv&gid=660938596"
+            
+            # Load data using pandas (like corrected_final_kpis.py)
+            fb_spend_df = pd.read_csv(FB_SPEND_URL)
+            attribution_df = pd.read_csv(ATTRIBUTION_URL)
+            web_pages_df = pd.read_csv(WEB_PAGES_URL)
+            
+            # Get totals from last rows
+            fb_totals = fb_spend_df.iloc[-1]
+            attr_totals = attribution_df.iloc[-1]
+            web_totals = web_pages_df.iloc[-1]
             
             # Extract corrected values from Google Sheets
-            total_spend = self.clean_numeric(fb_totals.get('Facebook Total Spend (USD)', 0))
-            total_revenue = self.clean_numeric(attr_totals.get('Attribution Attibuted Total Revenue (Predicted) (USD)', 0))
-            total_offer_spend = self.clean_numeric(attr_totals.get('Attribution Attibuted Offer Spend (Predicted) (USD)', 0))
-            total_nprs = self.clean_numeric(attr_totals.get('Attribution Attributed NPRs', 0))
-            pas_rate = self.clean_numeric(attr_totals.get('Attribution Attibuted PAS (Predicted)', 0))
+            total_spend = self.clean_numeric(fb_totals['Facebook Total Spend (USD)'])
+            total_revenue = self.clean_numeric(attr_totals['Attribution Attibuted Total Revenue (Predicted) (USD)'])
+            total_offer_spend = self.clean_numeric(attr_totals['Attribution Attibuted Offer Spend (Predicted) (USD)'])
+            total_nprs = self.clean_numeric(attr_totals['Attribution Attributed NPRs'])
+            pas_rate = self.clean_numeric(attr_totals['Attribution Attibuted PAS (Predicted)'])
             
-            # Web Pages data - get values by column names or positions
-            if isinstance(web_totals, dict):
-                # Try to get by column names first
-                web_keys = list(web_totals.keys())
-                total_funnel_starts = self.clean_numeric(web_totals.get(web_keys[3], 0)) if len(web_keys) > 3 else 0
-                total_survey_completions = self.clean_numeric(web_totals.get(web_keys[4], 0)) if len(web_keys) > 4 else 0
-                total_checkout_starts = self.clean_numeric(web_totals.get(web_keys[5], 0)) if len(web_keys) > 5 else 0
-            else:
-                total_funnel_starts = 0
-                total_survey_completions = 0
-                total_checkout_starts = 0
+            # Web Pages data (columns D, E, F from totals row)
+            total_funnel_starts = self.clean_numeric(web_totals.iloc[3])  # Column D
+            total_survey_completions = self.clean_numeric(web_totals.iloc[4])  # Column E
+            total_checkout_starts = self.clean_numeric(web_totals.iloc[5])  # Column F
             
             # Use Facebook API data for accurate traffic metrics
             if self.fb_api_data:
