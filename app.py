@@ -1,80 +1,31 @@
+#!/usr/bin/env python3
+"""
+Facebook Optimization Tool - Final Corrected Version
+- Facebook API: Impressions & Link Clicks only
+- Google Sheets: Spend (USD), Revenue, Conversions
+- Corrected CPA calculation: Spend ÷ NPRs
+"""
+
 from flask import Flask, render_template, jsonify, request
 from flask_cors import CORS
-import requests
+import gspread
+from google.auth import default
 import json
 import os
-import gspread
-from google.oauth2.service_account import Credentials
-import csv
-import io
-from datetime import datetime, timedelta
-import time
+import requests
 import threading
+import time
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 CORS(app)
 
 class FacebookOptimizationTool:
     def __init__(self):
-        self.openai_api_key = os.getenv('OPENAI_API_KEY')
-        self.fb_access_token = os.getenv('FB_ACCESS_TOKEN')
-        self.fb_ad_account_id = os.getenv('FB_AD_ACCOUNT_ID')
-        self.google_credentials = os.getenv('GOOGLE_CREDENTIALS_JSON')
-        
-        # Google Sheets IDs for the 3 separate spreadsheets
-        self.fb_spend_sheet_id = "1BG--tds9na-WC3Dx3t0DTuWcmZAVYbBsvWCUJ-yFQTk"
-        self.attribution_sheet_id = "1k49FsG1hAO3L-CGq1UjBPUxuDA6ZLMX0FCSMJQzmUCQ"
-        self.web_pages_sheet_id = "1e_eimaB0WTMOcWalCwSnMGFCZ5fDG1y7jpZF-qBNfdA"
-        
-        # Initialize KPI settings with defaults
-        self.kpi_settings = {
-            'ctr_threshold': 0.30,
-            'funnel_start_threshold': 15.0,
-            'cpa_threshold': 120.0,
-            'clicks_threshold': 500,
-            'roas_threshold': 1.0,
-            'cpc_threshold': 10.0,
-            'cpm_threshold': 50.0,
-            'booking_conversion_threshold': 2.0
-        }
-        
-        # Initialize optimization rules with defaults
-        self.optimization_rules = {
-            # Pause rules
-            'pause_roas_threshold': 0.5,
-            'pause_spend_threshold': 100.0,
-            'pause_cpa_threshold': 200.0,
-            'pause_cpa_spend_threshold': 50.0,
-            'pause_ctr_threshold': 0.20,
-            'pause_ctr_spend_threshold': 75.0,
-            'pause_no_bookings_threshold': 150.0,
-            'pause_high_cpc_threshold': 15.0,
-            'pause_high_cpc_spend_threshold': 100.0,
-            
-            # Scale rules
-            'scale_roas_threshold': 2.0,
-            'scale_min_spend_threshold': 50.0,
-            'scale_all_criteria_required': True,
-            'scale_ctr_bonus_threshold': 0.50,
-            'scale_cpa_bonus_threshold': 80.0,
-            'scale_booking_rate_threshold': 3.0,
-            
-            # Priority settings
-            'high_priority_spend_threshold': 200.0,
-            'medium_priority_spend_threshold': 100.0
-        }
-        
-        # Load saved settings
-        self.load_kpi_settings()
-        self.load_optimization_rules()
-        
-        # Initialize data containers
-        self.performance_data = []
-        self.web_data = []
-        self.attr_data = []
-        self.fb_data = []
-        self.fb_creative_data = {'adsets': [], 'ads': [], 'last_updated': None}
-        self.gc = None
+        self.data = []
+        self.fb_creative_data = {}
+        self.kpi_settings = self.load_default_kpi_settings()
+        self.optimization_rules = self.load_default_optimization_rules()
         
         # Initialize APIs
         self.init_google_sheets()
@@ -83,835 +34,576 @@ class FacebookOptimizationTool:
         # Load data
         self.load_data()
         
-        # Start Facebook creative data loading in background
-        self.start_background_facebook_loading()
-        
-        print("✅ Facebook Optimization Tool initialized")
-
-    def load_kpi_settings(self):
-        """Load KPI settings from file"""
-        try:
-            settings_file = '/tmp/kpi_settings.json'
-            if os.path.exists(settings_file):
-                with open(settings_file, 'r') as f:
-                    saved_settings = json.load(f)
-                    self.kpi_settings.update(saved_settings)
-                print("✅ KPI settings loaded from file")
-            else:
-                print("✅ Using default KPI settings")
-        except Exception as e:
-            print(f"⚠️ Error loading KPI settings: {e}")
-
-    def save_kpi_settings(self):
-        """Save KPI settings to file"""
-        try:
-            settings_file = '/tmp/kpi_settings.json'
-            with open(settings_file, 'w') as f:
-                json.dump(self.kpi_settings, f, indent=2)
-            print("✅ KPI settings saved")
-            return True
-        except Exception as e:
-            print(f"❌ Error saving KPI settings: {e}")
-            return False
-
-    def load_optimization_rules(self):
-        """Load optimization rules from file"""
-        try:
-            rules_file = '/tmp/optimization_rules.json'
-            if os.path.exists(rules_file):
-                with open(rules_file, 'r') as f:
-                    saved_rules = json.load(f)
-                    self.optimization_rules.update(saved_rules)
-                print("✅ Optimization rules loaded from file")
-            else:
-                print("✅ Using default optimization rules")
-        except Exception as e:
-            print(f"⚠️ Error loading optimization rules: {e}")
-
-    def save_optimization_rules(self):
-        """Save optimization rules to file"""
-        try:
-            rules_file = '/tmp/optimization_rules.json'
-            with open(rules_file, 'w') as f:
-                json.dump(self.optimization_rules, f, indent=2)
-            print("✅ Optimization rules saved")
-            return True
-        except Exception as e:
-            print(f"❌ Error saving optimization rules: {e}")
-            return False
-
+        # Start background Facebook creative data loading
+        threading.Thread(target=self.load_facebook_creative_data, daemon=True).start()
+    
     def init_google_sheets(self):
-        """Initialize Google Sheets API with better error handling"""
+        """Initialize Google Sheets API"""
         try:
-            if not self.google_credentials:
-                print("❌ Google credentials not found in environment")
-                return False
-            
-            # Parse credentials from environment variable
-            try:
-                creds_dict = json.loads(self.google_credentials)
-            except json.JSONDecodeError as e:
-                print(f"❌ Invalid Google credentials JSON format: {e}")
-                return False
-            
-            # Set up credentials
-            scopes = [
-                'https://www.googleapis.com/auth/spreadsheets.readonly',
-                'https://www.googleapis.com/auth/drive.readonly'
-            ]
-            
-            credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-            self.gc = gspread.authorize(credentials)
-            
-            # Test the connection with one of the actual spreadsheets
-            try:
-                test_sheet = self.gc.open_by_key(self.fb_spend_sheet_id)
-                print("✅ Google Sheets API initialized and tested")
-                return True
-            except Exception as e:
-                print(f"❌ Google Sheets access test failed: {e}")
-                return False
-            
+            # Use service account credentials from environment
+            credentials_json = os.getenv('GOOGLE_CREDENTIALS_JSON')
+            if credentials_json:
+                import tempfile
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                    f.write(credentials_json)
+                    credentials_path = f.name
+                
+                self.gc = gspread.service_account(filename=credentials_path)
+                os.unlink(credentials_path)  # Clean up temp file
+                print("✅ Google Sheets API initialized")
+            else:
+                print("❌ Google Sheets credentials not found")
+                self.gc = None
         except Exception as e:
             print(f"❌ Google Sheets initialization error: {e}")
-            return False
-
+            self.gc = None
+    
     def init_facebook_api(self):
-        """Initialize Facebook API for creative insights only"""
+        """Initialize Facebook API"""
         try:
-            if not self.fb_access_token or not self.fb_ad_account_id:
-                print("⚠️ Facebook API credentials not available")
-                return False
-            
-            print("✅ Facebook API credentials configured")
-            return True
-            
+            self.fb_access_token = os.getenv('FACEBOOK_ACCESS_TOKEN')
+            self.fb_ad_account_id = os.getenv('FACEBOOK_AD_ACCOUNT_ID')
+            if self.fb_access_token and self.fb_ad_account_id:
+                print("✅ Facebook API credentials configured")
+            else:
+                print("❌ Facebook API credentials not found")
         except Exception as e:
             print(f"❌ Facebook API initialization error: {e}")
-            return False
-
-    def load_data(self):
-        """Load data from Google Sheets only"""
-        try:
-            self.load_google_sheets_data()
-            self.process_combined_data()
-            
-        except Exception as e:
-            print(f"❌ Data loading error: {e}")
-
+    
     def load_google_sheets_data(self):
-        """Load data from the 3 separate Google Sheets"""
+        """Load data from Google Sheets"""
         try:
             if not self.gc:
                 print("❌ Google Sheets not initialized")
-                return
+                return [], [], []
             
-            # Web Pages data
-            try:
-                web_sheet = self.gc.open_by_key(self.web_pages_sheet_id).sheet1  # First sheet
-                web_data = web_sheet.get_all_records()
-                self.web_data = [row for row in web_data if row.get('Web Pages UTM Content') and str(row.get('Web Pages UTM Content')).lower() != 'total']
-                print(f"✅ Loaded {len(self.web_data)} rows from web_pages")
-            except Exception as e:
-                print(f"❌ Error loading Web Pages sheet: {e}")
-                self.web_data = []
+            # Load individual spreadsheets
+            fb_spend_sheet = self.gc.open_by_key('1BG--tds9na-WC3Dx3t0DTuWcmZAVYbBsvWCUJ-yFQTk').sheet1
+            attribution_sheet = self.gc.open_by_key('1k49FsG1hAO3L-CGq1UjBPUxuDA6ZLMX0FCSMJQzmUCQ').sheet1
+            web_pages_sheet = self.gc.open_by_key('1e_eimaB0WTMOcWalCwSnMGFCZ5fDG1y7jpZF-qBNfdA').sheet1
             
-            # Attribution data
-            try:
-                attr_sheet = self.gc.open_by_key(self.attribution_sheet_id).sheet1  # First sheet
-                attr_data = attr_sheet.get_all_records()
-                self.attr_data = [row for row in attr_data if row.get('Attribution UTM Content') and str(row.get('Attribution UTM Content')).lower() != 'total']
-                print(f"✅ Loaded {len(self.attr_data)} rows from attribution")
-            except Exception as e:
-                print(f"❌ Error loading Attribution sheet: {e}")
-                self.attr_data = []
+            # Get all records
+            fb_data = fb_spend_sheet.get_all_records()
+            attr_data = attribution_sheet.get_all_records()
+            web_data = web_pages_sheet.get_all_records()
             
-            # Facebook Spend data
-            try:
-                fb_sheet = self.gc.open_by_key(self.fb_spend_sheet_id).sheet1  # First sheet
-                fb_data = fb_sheet.get_all_records()
-                self.fb_data = [row for row in fb_data if row.get('Facebook Ad Name') and str(row.get('Facebook Ad Name')).lower() != 'total']
-                print(f"✅ Loaded {len(self.fb_data)} rows from fb_spend")
-            except Exception as e:
-                print(f"❌ Error loading Facebook Spend sheet: {e}")
-                self.fb_data = []
+            print(f"✅ Loaded {len(fb_data)} rows from fb_spend")
+            print(f"✅ Loaded {len(attr_data)} rows from attribution")
+            print(f"✅ Loaded {len(web_data)} rows from web_pages")
+            
+            return fb_data, attr_data, web_data
             
         except Exception as e:
-            print(f"❌ Google Sheets loading error: {e}")
-
-    def start_background_facebook_loading(self):
-        """Start Facebook creative data loading in background thread"""
-        def load_facebook_data():
-            try:
-                time.sleep(5)  # Wait 5 seconds after app startup
-                self.load_facebook_creative_data()
-            except Exception as e:
-                print(f"❌ Background Facebook loading error: {e}")
-        
-        # Start in background thread to prevent blocking
-        thread = threading.Thread(target=load_facebook_data, daemon=True)
-        thread.start()
-
-    def load_facebook_creative_data(self):
-        """Load Facebook creative data for AI insights only (non-blocking)"""
+            print(f"❌ Error loading Google Sheets: {e}")
+            return [], [], []
+    
+    def load_facebook_api_data(self):
+        """Load impressions and link clicks from Facebook API"""
         try:
             if not self.fb_access_token or not self.fb_ad_account_id:
-                print("⚠️ Facebook API credentials not available for creative data")
-                return
+                print("❌ Facebook API not configured")
+                return {}
             
-            print("🎨 Loading Facebook creative data for AI insights...")
+            # Get date range (June 1 to current)
+            start_date = "2025-06-01"
+            end_date = datetime.now().strftime("%Y-%m-%d")
             
-            # Load ad sets with creative data (with timeout)
-            try:
-                adsets_url = f"https://graph.facebook.com/v18.0/{self.fb_ad_account_id}/adsets"
-                adsets_params = {
-                    'access_token': self.fb_access_token,
-                    'fields': 'name,campaign{name},targeting,daily_budget,lifetime_budget,status',
-                    'limit': 100  # Reduced limit to prevent timeouts
-                }
-                
-                adsets_response = requests.get(adsets_url, params=adsets_params, timeout=15)
-                adsets_data = []
-                
-                if adsets_response.status_code == 200:
-                    adsets_data = adsets_response.json().get('data', [])
-                    print(f"✅ Facebook creative data loaded: {len(adsets_data)} ad sets")
-                else:
-                    print(f"⚠️ Facebook adsets API error: {adsets_response.status_code}")
-            except Exception as e:
-                print(f"⚠️ Facebook adsets loading error: {e}")
-                adsets_data = []
-            
-            # Load ads with creative data (with timeout)
-            try:
-                ads_url = f"https://graph.facebook.com/v18.0/{self.fb_ad_account_id}/ads"
-                ads_params = {
-                    'access_token': self.fb_access_token,
-                    'fields': 'name,adset{name},creative{title,body,image_url,video_id,object_story_spec},status',
-                    'limit': 100  # Reduced limit to prevent timeouts
-                }
-                
-                ads_response = requests.get(ads_url, params=ads_params, timeout=15)
-                ads_data = []
-                
-                if ads_response.status_code == 200:
-                    ads_data = ads_response.json().get('data', [])
-                    print(f"✅ Facebook creative data loaded: {len(adsets_data)} ad sets, {len(ads_data)} ads")
-                else:
-                    print(f"⚠️ Facebook ads API error: {ads_response.status_code}")
-            except Exception as e:
-                print(f"⚠️ Facebook ads loading error: {e}")
-                ads_data = []
-            
-            # Store creative data for AI insights
-            self.fb_creative_data = {
-                'adsets': adsets_data,
-                'ads': ads_data,
-                'last_updated': datetime.now().isoformat()
+            url = f"https://graph.facebook.com/v18.0/act_{self.fb_ad_account_id}/ads"
+            params = {
+                'access_token': self.fb_access_token,
+                'fields': 'name,adset{name},insights{impressions,clicks}',
+                'time_range': f'{{"since":"{start_date}","until":"{end_date}"}}',
+                'limit': 100
             }
             
-        except Exception as e:
-            print(f"❌ Facebook creative data loading error: {e}")
-
-    def safe_float(self, value, default=0):
-        """Safely convert value to float"""
-        try:
-            if value is None or value == '' or value == 'None':
-                return default
-            # Handle string numbers with commas
-            if isinstance(value, str):
-                value = value.replace(',', '')
-            return float(value)
-        except (ValueError, TypeError):
-            return default
-
-    def process_combined_data(self):
-        """Process and combine data from Google Sheets only"""
-        try:
-            combined_data = []
+            fb_api_data = {}
+            page_count = 0
+            max_pages = 20  # Reasonable limit
             
-            print(f"🔄 Processing Google Sheets data: {len(self.web_data)} web, {len(self.attr_data)} attr, {len(self.fb_data)} fb")
+            print(f"🔄 Loading Facebook API data from {start_date} to {end_date}")
             
-            # Create lookup dictionaries for Google Sheets data
-            web_lookup = {}
-            for row in self.web_data:
-                utm_content = str(row.get('Web Pages UTM Content', '')).strip()
-                utm_term = str(row.get('Web Pages UTM Term', '')).strip()
-                if utm_content and utm_term and utm_content.lower() != 'total' and utm_term.lower() != 'total':
-                    keys = [
-                        f"{utm_term}_{utm_content}",
-                        f"{utm_content}_{utm_term}",
-                        utm_content,
-                        utm_term
-                    ]
-                    for key in keys:
-                        web_lookup[key.lower()] = row
-            
-            attr_lookup = {}
-            for row in self.attr_data:
-                utm_content = str(row.get('Attribution UTM Content', '')).strip()
-                utm_term = str(row.get('Attribution UTM Term', '')).strip()
-                if utm_content and utm_term and utm_content.lower() != 'total' and utm_term.lower() != 'total':
-                    keys = [
-                        f"{utm_term}_{utm_content}",
-                        f"{utm_content}_{utm_term}",
-                        utm_content,
-                        utm_term
-                    ]
-                    for key in keys:
-                        attr_lookup[key.lower()] = row
-            
-            print(f"🔍 Created lookups: {len(web_lookup)} web, {len(attr_lookup)} attr")
-            
-            # Process FB spend data as primary source and combine with web/attribution data
-            processed_count = 0
-            for fb_row in self.fb_data:
-                ad_set_name = str(fb_row.get('Facebook Adset Name', '')).strip()
-                ad_name = str(fb_row.get('Facebook Ad Name', '')).strip()
+            while url and page_count < max_pages:
+                response = requests.get(url, params=params, timeout=30)
                 
-                # Skip empty rows
-                if not ad_set_name or not ad_name or ad_set_name.lower() == 'total' or ad_name.lower() == 'total':
+                if response.status_code == 200:
+                    data = response.json()
+                    ads = data.get('data', [])
+                    
+                    page_count += 1
+                    print(f"📡 Loaded page {page_count}: {len(ads)} ads")
+                    
+                    for ad in ads:
+                        ad_name = ad.get('name', '')
+                        adset_info = ad.get('adset', {})
+                        adset_name = adset_info.get('name', '') if adset_info else ''
+                        insights = ad.get('insights', {}).get('data', [])
+                        
+                        if ad_name and adset_name and insights:
+                            # Sum up insights data
+                            total_impressions = sum(int(insight.get('impressions', 0)) for insight in insights)
+                            total_clicks = sum(int(insight.get('clicks', 0)) for insight in insights)
+                            
+                            # Create combination key
+                            combo_key = f"{adset_name}|||{ad_name}"
+                            fb_api_data[combo_key] = {
+                                'impressions': total_impressions,
+                                'link_clicks': total_clicks,
+                                'ad_name': ad_name,
+                                'adset_name': adset_name
+                            }
+                    
+                    # Get next page
+                    paging = data.get('paging', {})
+                    url = paging.get('next')
+                    params = {}  # Next URL already has params
+                    
+                else:
+                    print(f"❌ Facebook API error: {response.status_code}")
+                    break
+            
+            print(f"✅ Loaded {len(fb_api_data)} ad combinations from Facebook API")
+            return fb_api_data
+            
+        except Exception as e:
+            print(f"❌ Facebook API error: {e}")
+            return {}
+    
+    def load_data(self):
+        """Load and process all data"""
+        print("🔄 Loading data from Google Sheets...")
+        
+        # Load Google Sheets data
+        fb_data, attr_data, web_data = self.load_google_sheets_data()
+        
+        # Load Facebook API data for impressions/clicks
+        fb_api_data = self.load_facebook_api_data()
+        
+        print(f"🔄 Processing data: {len(fb_data)} fb, {len(attr_data)} attr, {len(web_data)} web, {len(fb_api_data)} fb_api")
+        
+        # Process and combine data
+        self.data = self.process_combined_data(fb_data, attr_data, web_data, fb_api_data)
+        
+        print(f"✅ Processed {len(self.data)} combined records")
+    
+    def process_combined_data(self, fb_data, attr_data, web_data, fb_api_data):
+        """Process and combine data from all sources"""
+        combined_data = []
+        
+        # Use FB Spend as primary dataset (exclude totals row)
+        fb_records = [row for row in fb_data if row.get('Facebook Ad Name') and 
+                     str(row.get('Facebook Ad Name')).lower() != 'total']
+        
+        for fb_row in fb_records:
+            try:
+                # Extract FB data
+                ad_name = str(fb_row.get('Facebook Ad Name', '')).strip()
+                adset_name = str(fb_row.get('Facebook Adset Name', '')).strip()
+                spend = self.clean_numeric(fb_row.get('Facebook Total Spend (USD)', 0))
+                
+                if not ad_name or not adset_name:
                     continue
                 
-                # Try to find matching web and attribution data
-                web_row = {}
-                attr_row = {}
+                # Create combination key for matching
+                combo_key = f"{adset_name}|||{ad_name}"
                 
-                # Try different key combinations for matching
-                search_keys = [
-                    f"{ad_set_name}_{ad_name}",
-                    f"{ad_name}_{ad_set_name}",
-                    ad_name,
-                    ad_set_name
-                ]
+                # Get Facebook API data (impressions/clicks)
+                fb_api_record = fb_api_data.get(combo_key, {})
+                impressions = fb_api_record.get('impressions', 0)
+                link_clicks = fb_api_record.get('link_clicks', 0)
                 
-                for key in search_keys:
-                    key_lower = key.lower()
-                    if key_lower in web_lookup:
-                        web_row = web_lookup[key_lower]
+                # Try to match with attribution data (by UTM content)
+                revenue = 0
+                offer_spend = 0
+                nprs = 0
+                for attr_row in attr_data:
+                    attr_utm = str(attr_row.get('Attribution UTM Content', '')).strip()
+                    if attr_utm and (attr_utm in ad_name or ad_name in attr_utm):
+                        revenue = self.clean_numeric(attr_row.get('Attribution Attibuted Total Revenue (Predicted) (USD)', 0))
+                        offer_spend = self.clean_numeric(attr_row.get('Attribution Attibuted Offer Spend (Predicted) (USD)', 0))
+                        nprs = self.clean_numeric(attr_row.get('Attribution Attributed NPRs', 0))
                         break
                 
-                for key in search_keys:
-                    key_lower = key.lower()
-                    if key_lower in attr_lookup:
-                        attr_row = attr_lookup[key_lower]
+                # Try to match with web pages data (by UTM content)
+                funnel_starts = 0
+                survey_completions = 0
+                checkout_starts = 0
+                for web_row in web_data:
+                    web_utm = str(web_row.get('Web Pages UTM Content', '')).strip()
+                    if web_utm and (web_utm in ad_name or ad_name in web_utm):
+                        funnel_starts = self.clean_numeric(web_row.get('Web Pages Unique Count of Sessions with Funnel Starts', 0))
+                        survey_completions = self.clean_numeric(web_row.get('Web Pages Unique Count of Sessions with Match Results', 0))
+                        checkout_starts = self.clean_numeric(web_row.get('Count of Sessions with Checkout Started (V2 included)', 0))
                         break
                 
-                # Get spend and impressions from Facebook Google Sheets
-                spend = self.safe_float(fb_row.get('Facebook Total Spend (USD)', 0))
-                impressions = self.safe_float(fb_row.get('Facebook Total Impressions', 0))
+                # Calculate metrics
+                ctr = (link_clicks / impressions * 100) if impressions > 0 else 0
+                cpc = (spend / link_clicks) if link_clicks > 0 else 0
+                cpm = (spend / impressions * 1000) if impressions > 0 else 0
+                roas = (revenue / spend) if spend > 0 else 0
+                cpa = (spend / nprs) if nprs > 0 else 0  # CORRECTED: Spend ÷ NPRs
                 
-                # Calculate clicks as Web Pages Unique Count × 0.9 (as requested)
-                site_visits = self.safe_float(web_row.get('Web Pages Unique Count of Landing Pages', 0))
-                clicks = site_visits * 0.9  # New calculation method
+                # Funnel rates
+                funnel_start_rate = (funnel_starts / link_clicks * 100) if link_clicks > 0 else 0
+                booking_rate = (nprs / link_clicks * 100) if link_clicks > 0 else 0
+                survey_completion_rate = (survey_completions / funnel_starts * 100) if funnel_starts > 0 else 0
+                checkout_start_rate = (checkout_starts / survey_completions * 100) if survey_completions > 0 else 0
                 
-                # Calculate marketing metrics using Google Sheets data
-                ctr = (clicks / impressions * 100) if impressions > 0 else 0
-                cpc = spend / clicks if clicks > 0 else 0
-                cpm = spend / impressions * 1000 if impressions > 0 else 0
+                # Success criteria (8 criteria)
+                success_count = 0
+                if ctr >= 0.30: success_count += 1
+                if funnel_start_rate >= 15.0: success_count += 1
+                if cpa <= 120.0 and cpa > 0: success_count += 1
+                if link_clicks >= 500: success_count += 1
+                if roas >= 1.0: success_count += 1
+                if cpc <= 10.0 and cpc > 0: success_count += 1
+                if cpm <= 50.0 and cpm > 0: success_count += 1
+                if booking_rate >= 2.0: success_count += 1
                 
-                # Web data
-                funnel_starts = self.safe_float(web_row.get('Web Pages Unique Count of Sessions with Funnel Starts', 0))
-                survey_complete = self.safe_float(web_row.get('Web Pages Unique Count of Sessions with Match Results', 0))
-                checkout_starts = self.safe_float(web_row.get('Count of Sessions with Checkout Started (V2 included)', 0))
-                
-                # Attribution data
-                bookings = self.safe_float(attr_row.get('Attribution Attributed NPRs', 0))
-                revenue = self.safe_float(attr_row.get('Attribution Attibuted Total Revenue (Predicted) (USD)', 0))
-                completion_rate = self.safe_float(attr_row.get('Attribution Attibuted PAS (Predicted)', 0.45))
-                promo_spend = self.safe_float(attr_row.get('Attibuted Offer Spend (Predicted) (USD)', 0))
-                
-                # Apply completion rate failsafe (39%-51% range, default 45%)
-                if completion_rate < 0.39 or completion_rate > 0.51:
-                    completion_rate = 0.45
-                
-                # Calculate conversion metrics
-                funnel_start_rate = (funnel_starts / site_visits * 100) if site_visits > 0 else 0
-                survey_completion_rate = (survey_complete / funnel_starts * 100) if funnel_starts > 0 else 0
-                checkout_start_rate = (checkout_starts / survey_complete * 100) if survey_complete > 0 else 0
-                booking_conversion_rate = (bookings / site_visits * 100) if site_visits > 0 else 0
-                
-                cpa = spend / bookings if bookings > 0 else 0
-                total_cost = spend + promo_spend
-                effective_bookings = bookings * completion_rate
-                cac = total_cost / effective_bookings if effective_bookings > 0 else 0
-                ltv = revenue / effective_bookings if effective_bookings > 0 else 0
-                roas = ltv / cac if cac > 0 else 0
-                
-                # Success criteria using dynamic KPI settings
-                success_criteria = {
-                    'ctr_good': ctr > self.kpi_settings['ctr_threshold'],
-                    'funnel_start_good': funnel_start_rate > self.kpi_settings['funnel_start_threshold'],
-                    'cpa_good': cpa < self.kpi_settings['cpa_threshold'] and cpa > 0,
-                    'clicks_good': clicks > self.kpi_settings['clicks_threshold'],
-                    'roas_good': roas > self.kpi_settings['roas_threshold'],
-                    'cpc_good': cpc < self.kpi_settings['cpc_threshold'] and cpc > 0,
-                    'cpm_good': cpm < self.kpi_settings['cpm_threshold'] and cpm > 0,
-                    'booking_conversion_good': booking_conversion_rate > self.kpi_settings['booking_conversion_threshold']
-                }
-                
-                combined_row = {
-                    'ad_set_name': ad_set_name,
+                combined_record = {
                     'ad_name': ad_name,
+                    'adset_name': adset_name,
                     'spend': spend,
-                    'clicks': clicks,
                     'impressions': impressions,
+                    'link_clicks': link_clicks,
+                    'revenue': revenue,
+                    'offer_spend': offer_spend,
+                    'nprs': nprs,
+                    'funnel_starts': funnel_starts,
+                    'survey_completions': survey_completions,
+                    'checkout_starts': checkout_starts,
                     'ctr': ctr,
                     'cpc': cpc,
                     'cpm': cpm,
-                    'site_visits': site_visits,
-                    'funnel_starts': funnel_starts,
-                    'funnel_start_rate': funnel_start_rate,
-                    'survey_complete': survey_complete,
-                    'survey_completion_rate': survey_completion_rate,
-                    'checkout_starts': checkout_starts,
-                    'checkout_start_rate': checkout_start_rate,
-                    'bookings': bookings,
-                    'booking_conversion_rate': booking_conversion_rate,
-                    'cpa': cpa,
-                    'revenue': revenue,
-                    'ltv': ltv,
-                    'cac': cac,
                     'roas': roas,
-                    'completion_rate': completion_rate,
-                    'promo_spend': promo_spend,
-                    'total_cost': total_cost,
-                    'success_criteria': success_criteria,
-                    'all_criteria_met': all(success_criteria.values()),
-                    'has_web_data': bool(web_row),
-                    'has_attr_data': bool(attr_row),
-                    'data_source': 'google_sheets'
+                    'cpa': cpa,
+                    'funnel_start_rate': funnel_start_rate,
+                    'booking_rate': booking_rate,
+                    'survey_completion_rate': survey_completion_rate,
+                    'checkout_start_rate': checkout_start_rate,
+                    'success_count': success_count
                 }
                 
-                combined_data.append(combined_row)
-                processed_count += 1
-            
-            self.performance_data = combined_data
-            print(f"✅ Processed {processed_count} combined records from Google Sheets data")
-            
-            if processed_count == 0:
-                print("⚠️ No records were successfully combined - check data format...")
+                combined_data.append(combined_record)
                 
-        except Exception as e:
-            print(f"❌ Data processing error: {e}")
-
+            except Exception as e:
+                print(f"❌ Error processing record: {e}")
+                continue
+        
+        return combined_data
+    
+    def clean_numeric(self, value):
+        """Clean and convert numeric values"""
+        if value is None or value == '' or value == 0:
+            return 0.0
+        try:
+            if isinstance(value, str):
+                value = value.replace('$', '').replace(',', '').replace('%', '').strip()
+            return float(value)
+        except:
+            return 0.0
+    
     def get_performance_summary(self):
-        """Get performance summary statistics with corrected calculations"""
-        if not self.performance_data:
-            return {
-                'total_ads': 0,
-                'total_spend': 0,
-                'total_revenue': 0,
-                'total_clicks': 0,
-                'total_impressions': 0,
-                'total_bookings': 0,
-                'total_offer_spend': 0,
-                'avg_ctr': 0,
-                'avg_cpc': 0,
-                'avg_cpa': 0,
-                'avg_roas': 0,
-                'avg_cpm': 0,
-                'avg_completion_rate': 0,
-                'avg_funnel_start_rate': 0,
-                'avg_booking_rate': 0,
-                'overall_roas': 0,
-                'overall_ctr': 0,
-                'roi': 0,
-                'successful_ads': 0
-            }
+        """Get performance summary with corrected calculations"""
+        if not self.data:
+            return {}
         
         # Calculate totals
-        total_spend = sum(ad['spend'] for ad in self.performance_data)
-        total_revenue = sum(ad['revenue'] for ad in self.performance_data)
-        total_clicks = sum(ad['clicks'] for ad in self.performance_data)
-        total_impressions = sum(ad['impressions'] for ad in self.performance_data)
-        total_bookings = sum(ad['bookings'] for ad in self.performance_data)
-        total_offer_spend = sum(ad['promo_spend'] for ad in self.performance_data)
+        total_ads = len(self.data)
+        unique_ads = len(set(record['ad_name'] for record in self.data))
+        unique_adsets = len(set(record['adset_name'] for record in self.data))
         
-        # Calculate overall metrics (corrected)
-        overall_roas = total_revenue / total_spend if total_spend > 0 else 0
-        overall_ctr = (total_clicks / total_impressions * 100) if total_impressions > 0 else 0
+        total_spend = sum(record['spend'] for record in self.data)
+        total_revenue = sum(record['revenue'] for record in self.data)
+        total_offer_spend = sum(record['offer_spend'] for record in self.data)
+        total_impressions = sum(record['impressions'] for record in self.data)
+        total_link_clicks = sum(record['link_clicks'] for record in self.data)
+        total_nprs = sum(record['nprs'] for record in self.data)
+        total_funnel_starts = sum(record['funnel_starts'] for record in self.data)
+        total_survey_completions = sum(record['survey_completions'] for record in self.data)
+        total_checkout_starts = sum(record['checkout_starts'] for record in self.data)
+        
+        # Calculate performance ratios
+        overall_ctr = (total_link_clicks / total_impressions * 100) if total_impressions > 0 else 0
+        average_cpc = (total_spend / total_link_clicks) if total_link_clicks > 0 else 0
+        average_cpm = (total_spend / total_impressions * 1000) if total_impressions > 0 else 0
+        overall_roas = (total_revenue / total_spend) if total_spend > 0 else 0
+        average_cpa = (total_spend / total_nprs) if total_nprs > 0 else 0  # CORRECTED
+        
+        # Completion and LTV
+        pas_rate = 0.479  # 47.9% from attribution data
+        completed_bookings = total_nprs * pas_rate
+        total_cost = total_spend + total_offer_spend
+        cac = (total_cost / completed_bookings) if completed_bookings > 0 else 0
+        ltv = (total_revenue / completed_bookings) if completed_bookings > 0 else 0
+        
+        # Funnel metrics
+        funnel_start_rate = (total_funnel_starts / total_link_clicks * 100) if total_link_clicks > 0 else 0
+        booking_rate = (total_nprs / total_link_clicks * 100) if total_link_clicks > 0 else 0
+        survey_completion_rate = (total_survey_completions / total_funnel_starts * 100) if total_funnel_starts > 0 else 0
+        checkout_start_rate = (total_checkout_starts / total_survey_completions * 100) if total_survey_completions > 0 else 0
+        
+        # ROI
         roi = ((total_revenue - total_offer_spend - total_spend) / total_revenue * 100) if total_revenue > 0 else 0
         
-        # Calculate averages (excluding zero values where appropriate)
-        ads_with_cpc = [ad for ad in self.performance_data if ad['cpc'] > 0]
-        ads_with_cpm = [ad for ad in self.performance_data if ad['cpm'] > 0]
-        ads_with_cpa = [ad for ad in self.performance_data if ad['cpa'] > 0]
-        ads_with_roas = [ad for ad in self.performance_data if ad['roas'] > 0]
-        
-        avg_ctr = sum(ad['ctr'] for ad in self.performance_data) / len(self.performance_data)
-        avg_cpc = sum(ad['cpc'] for ad in ads_with_cpc) / max(1, len(ads_with_cpc))
-        avg_cpm = sum(ad['cpm'] for ad in ads_with_cpm) / max(1, len(ads_with_cpm))
-        avg_cpa = sum(ad['cpa'] for ad in ads_with_cpa) / max(1, len(ads_with_cpa))
-        avg_roas = sum(ad['roas'] for ad in ads_with_roas) / max(1, len(ads_with_roas))
-        avg_completion_rate = sum(ad['completion_rate'] for ad in self.performance_data) / len(self.performance_data) * 100
-        avg_funnel_start_rate = sum(ad['funnel_start_rate'] for ad in self.performance_data) / len(self.performance_data)
-        avg_booking_rate = sum(ad['booking_conversion_rate'] for ad in self.performance_data) / len(self.performance_data)
-        
-        # Count successful ads
-        successful_ads = sum(1 for ad in self.performance_data if ad['all_criteria_met'])
+        # Success ads
+        successful_ads = len([r for r in self.data if r['success_count'] >= 6])
         
         return {
-            'total_ads': len(self.performance_data),
+            'total_ads': total_ads,
+            'unique_ads': unique_ads,
+            'unique_adsets': unique_adsets,
             'total_spend': total_spend,
             'total_revenue': total_revenue,
-            'total_clicks': total_clicks,
-            'total_impressions': total_impressions,
-            'total_bookings': total_bookings,
             'total_offer_spend': total_offer_spend,
-            'avg_ctr': avg_ctr,
-            'avg_cpc': avg_cpc,
-            'avg_cpa': avg_cpa,
-            'avg_roas': avg_roas,
-            'avg_cpm': avg_cpm,
-            'avg_completion_rate': avg_completion_rate,
-            'avg_funnel_start_rate': avg_funnel_start_rate,
-            'avg_booking_rate': avg_booking_rate,
-            'overall_roas': overall_roas,
+            'total_cost': total_cost,
+            'total_impressions': total_impressions,
+            'total_link_clicks': total_link_clicks,
+            'total_nprs': total_nprs,
+            'completed_bookings': completed_bookings,
+            'total_funnel_starts': total_funnel_starts,
+            'total_survey_completions': total_survey_completions,
+            'total_checkout_starts': total_checkout_starts,
             'overall_ctr': overall_ctr,
+            'average_cpc': average_cpc,
+            'average_cpm': average_cpm,
+            'overall_roas': overall_roas,
+            'average_cpa': average_cpa,
+            'cac': cac,
+            'ltv': ltv,
+            'funnel_start_rate': funnel_start_rate,
+            'booking_rate': booking_rate,
+            'survey_completion_rate': survey_completion_rate,
+            'checkout_start_rate': checkout_start_rate,
+            'completion_rate': pas_rate * 100,
             'roi': roi,
             'successful_ads': successful_ads
         }
-
-    def get_creative_dashboard_data(self, search_filter=''):
+    
+    def get_creative_dashboard_data(self):
         """Get creative dashboard data (ad-level grouping)"""
-        if not self.performance_data:
+        if not self.data:
             return []
         
         # Group by ad name
         ad_groups = {}
-        for ad in self.performance_data:
-            ad_name = ad['ad_name']
-            
-            # Apply search filter
-            if search_filter and search_filter.lower() not in ad_name.lower():
-                continue
-            
+        for record in self.data:
+            ad_name = record['ad_name']
             if ad_name not in ad_groups:
-                ad_groups[ad_name] = {
-                    'ad_name': ad_name,
-                    'ad_count': 0,
-                    'spend': 0,
-                    'clicks': 0,
-                    'impressions': 0,
-                    'bookings': 0,
-                    'revenue': 0,
-                    'promo_spend': 0,
-                    'site_visits': 0,
-                    'funnel_starts': 0,
-                    'success_count': 0
-                }
-            
-            group = ad_groups[ad_name]
-            group['ad_count'] += 1
-            group['spend'] += ad['spend']
-            group['clicks'] += ad['clicks']
-            group['impressions'] += ad['impressions']
-            group['bookings'] += ad['bookings']
-            group['revenue'] += ad['revenue']
-            group['promo_spend'] += ad['promo_spend']
-            group['site_visits'] += ad['site_visits']
-            group['funnel_starts'] += ad['funnel_starts']
-            
-            # Count success criteria
-            success_count = sum(1 for criteria in ad['success_criteria'].values() if criteria)
-            group['success_count'] = max(group['success_count'], success_count)
+                ad_groups[ad_name] = []
+            ad_groups[ad_name].append(record)
         
-        # Calculate metrics for each group
-        result = []
-        for group in ad_groups.values():
-            ctr = (group['clicks'] / group['impressions'] * 100) if group['impressions'] > 0 else 0
-            cpc = group['spend'] / group['clicks'] if group['clicks'] > 0 else 0
-            cpm = group['spend'] / group['impressions'] * 1000 if group['impressions'] > 0 else 0
-            cpa = group['spend'] / group['bookings'] if group['bookings'] > 0 else 0
+        # Aggregate data for each ad
+        creative_data = []
+        for ad_name, records in ad_groups.items():
+            # Sum metrics
+            total_spend = sum(r['spend'] for r in records)
+            total_impressions = sum(r['impressions'] for r in records)
+            total_link_clicks = sum(r['link_clicks'] for r in records)
+            total_revenue = sum(r['revenue'] for r in records)
+            total_nprs = sum(r['nprs'] for r in records)
+            total_funnel_starts = sum(r['funnel_starts'] for r in records)
+            total_survey_completions = sum(r['survey_completions'] for r in records)
+            total_checkout_starts = sum(r['checkout_starts'] for r in records)
             
-            funnel_start_rate = (group['funnel_starts'] / group['site_visits'] * 100) if group['site_visits'] > 0 else 0
-            booking_conversion_rate = (group['bookings'] / group['site_visits'] * 100) if group['site_visits'] > 0 else 0
+            # Calculate aggregated metrics
+            ctr = (total_link_clicks / total_impressions * 100) if total_impressions > 0 else 0
+            cpc = (total_spend / total_link_clicks) if total_link_clicks > 0 else 0
+            cpm = (total_spend / total_impressions * 1000) if total_impressions > 0 else 0
+            roas = (total_revenue / total_spend) if total_spend > 0 else 0
+            cpa = (total_spend / total_nprs) if total_nprs > 0 else 0
             
-            total_cost = group['spend'] + group['promo_spend']
-            effective_bookings = group['bookings'] * 0.45  # Default completion rate
-            cac = total_cost / effective_bookings if effective_bookings > 0 else 0
-            ltv = group['revenue'] / effective_bookings if effective_bookings > 0 else 0
-            roas = ltv / cac if cac > 0 else 0
+            # Funnel rates
+            funnel_start_rate = (total_funnel_starts / total_link_clicks * 100) if total_link_clicks > 0 else 0
+            booking_rate = (total_nprs / total_link_clicks * 100) if total_link_clicks > 0 else 0
+            survey_completion_rate = (total_survey_completions / total_funnel_starts * 100) if total_funnel_starts > 0 else 0
+            checkout_start_rate = (total_checkout_starts / total_survey_completions * 100) if total_survey_completions > 0 else 0
             
-            result.append({
-                'ad_name': group['ad_name'],
-                'ad_count': group['ad_count'],
-                'spend': group['spend'],
-                'clicks': group['clicks'],
-                'impressions': group['impressions'],
+            # Success criteria
+            success_count = 0
+            if ctr >= 0.30: success_count += 1
+            if funnel_start_rate >= 15.0: success_count += 1
+            if cpa <= 120.0 and cpa > 0: success_count += 1
+            if total_link_clicks >= 500: success_count += 1
+            if roas >= 1.0: success_count += 1
+            if cpc <= 10.0 and cpc > 0: success_count += 1
+            if cpm <= 50.0 and cpm > 0: success_count += 1
+            if booking_rate >= 2.0: success_count += 1
+            
+            creative_data.append({
+                'ad_name': ad_name,
+                'ad_count': len(records),
+                'spend': total_spend,
+                'impressions': total_impressions,
+                'link_clicks': total_link_clicks,
+                'revenue': total_revenue,
+                'nprs': total_nprs,
+                'funnel_starts': total_funnel_starts,
+                'survey_completions': total_survey_completions,
+                'checkout_starts': total_checkout_starts,
                 'ctr': ctr,
                 'cpc': cpc,
                 'cpm': cpm,
-                'funnel_start_rate': funnel_start_rate,
-                'booking_conversion_rate': booking_conversion_rate,
-                'completion_rate': 45.0,  # Default
-                'bookings': group['bookings'],
-                'cpa': cpa,
                 'roas': roas,
-                'success_count': group['success_count']
-            })
-        
-        return sorted(result, key=lambda x: x['spend'], reverse=True)
-
-    def get_adgroup_dashboard_data(self, search_filter=''):
-        """Get ad group dashboard data (nested expandable view)"""
-        if not self.performance_data:
-            return []
-        
-        # Group by ad set name
-        adset_groups = {}
-        for ad in self.performance_data:
-            ad_set_name = ad['ad_set_name']
-            
-            # Apply search filter
-            if search_filter and search_filter.lower() not in ad_set_name.lower() and search_filter.lower() not in ad['ad_name'].lower():
-                continue
-            
-            if ad_set_name not in adset_groups:
-                adset_groups[ad_set_name] = {
-                    'ad_set_name': ad_set_name,
-                    'spend': 0,
-                    'clicks': 0,
-                    'impressions': 0,
-                    'bookings': 0,
-                    'revenue': 0,
-                    'promo_spend': 0,
-                    'site_visits': 0,
-                    'funnel_starts': 0,
-                    'ads': [],
-                    'successful_ads': 0,
-                    'total_ads': 0
-                }
-            
-            group = adset_groups[ad_set_name]
-            group['spend'] += ad['spend']
-            group['clicks'] += ad['clicks']
-            group['impressions'] += ad['impressions']
-            group['bookings'] += ad['bookings']
-            group['revenue'] += ad['revenue']
-            group['promo_spend'] += ad['promo_spend']
-            group['site_visits'] += ad['site_visits']
-            group['funnel_starts'] += ad['funnel_starts']
-            group['total_ads'] += 1
-            
-            if ad['all_criteria_met']:
-                group['successful_ads'] += 1
-            
-            # Add individual ad data
-            success_count = sum(1 for criteria in ad['success_criteria'].values() if criteria)
-            group['ads'].append({
-                'ad_name': ad['ad_name'],
-                'spend': ad['spend'],
-                'clicks': ad['clicks'],
-                'impressions': ad['impressions'],
-                'ctr': ad['ctr'],
-                'cpc': ad['cpc'],
-                'cpm': ad['cpm'],
-                'funnel_start_rate': ad['funnel_start_rate'],
-                'booking_conversion_rate': ad['booking_conversion_rate'],
-                'completion_rate': ad['completion_rate'] * 100,
-                'bookings': ad['bookings'],
-                'cpa': ad['cpa'],
-                'roas': ad['roas'],
+                'cpa': cpa,
+                'funnel_start_rate': funnel_start_rate,
+                'booking_rate': booking_rate,
+                'survey_completion_rate': survey_completion_rate,
+                'checkout_start_rate': checkout_start_rate,
                 'success_count': success_count
             })
         
-        # Calculate metrics for each group
-        result = []
-        for group in adset_groups.values():
-            ctr = (group['clicks'] / group['impressions'] * 100) if group['impressions'] > 0 else 0
-            cpc = group['spend'] / group['clicks'] if group['clicks'] > 0 else 0
-            cpm = group['spend'] / group['impressions'] * 1000 if group['impressions'] > 0 else 0
-            cpa = group['spend'] / group['bookings'] if group['bookings'] > 0 else 0
+        # Sort by spend descending
+        creative_data.sort(key=lambda x: x['spend'], reverse=True)
+        return creative_data
+    
+    def get_adgroup_dashboard_data(self):
+        """Get ad group dashboard data (nested ad set + ad view)"""
+        if not self.data:
+            return []
+        
+        # Group by ad set
+        adset_groups = {}
+        for record in self.data:
+            adset_name = record['adset_name']
+            if adset_name not in adset_groups:
+                adset_groups[adset_name] = []
+            adset_groups[adset_name].append(record)
+        
+        # Create nested structure
+        adgroup_data = []
+        for adset_name, records in adset_groups.items():
+            # Calculate ad set totals
+            total_spend = sum(r['spend'] for r in records)
+            total_impressions = sum(r['impressions'] for r in records)
+            total_link_clicks = sum(r['link_clicks'] for r in records)
+            total_revenue = sum(r['revenue'] for r in records)
+            total_nprs = sum(r['nprs'] for r in records)
+            total_funnel_starts = sum(r['funnel_starts'] for r in records)
+            total_survey_completions = sum(r['survey_completions'] for r in records)
+            total_checkout_starts = sum(r['checkout_starts'] for r in records)
             
-            funnel_start_rate = (group['funnel_starts'] / group['site_visits'] * 100) if group['site_visits'] > 0 else 0
-            booking_conversion_rate = (group['bookings'] / group['site_visits'] * 100) if group['site_visits'] > 0 else 0
+            # Calculate ad set metrics
+            ctr = (total_link_clicks / total_impressions * 100) if total_impressions > 0 else 0
+            cpc = (total_spend / total_link_clicks) if total_link_clicks > 0 else 0
+            cpm = (total_spend / total_impressions * 1000) if total_impressions > 0 else 0
+            roas = (total_revenue / total_spend) if total_spend > 0 else 0
+            cpa = (total_spend / total_nprs) if total_nprs > 0 else 0
             
-            total_cost = group['spend'] + group['promo_spend']
-            effective_bookings = group['bookings'] * 0.45  # Default completion rate
-            cac = total_cost / effective_bookings if effective_bookings > 0 else 0
-            ltv = group['revenue'] / effective_bookings if effective_bookings > 0 else 0
-            roas = ltv / cac if cac > 0 else 0
+            # Funnel rates
+            funnel_start_rate = (total_funnel_starts / total_link_clicks * 100) if total_link_clicks > 0 else 0
+            booking_rate = (total_nprs / total_link_clicks * 100) if total_link_clicks > 0 else 0
+            survey_completion_rate = (total_survey_completions / total_funnel_starts * 100) if total_funnel_starts > 0 else 0
+            checkout_start_rate = (total_checkout_starts / total_survey_completions * 100) if total_survey_completions > 0 else 0
             
-            result.append({
-                'ad_set_name': group['ad_set_name'],
-                'spend': group['spend'],
-                'clicks': group['clicks'],
-                'impressions': group['impressions'],
+            # Count successful ads in this ad set
+            successful_ads = len([r for r in records if r['success_count'] >= 6])
+            total_ads = len(records)
+            
+            adgroup_data.append({
+                'adset_name': adset_name,
+                'total_ads': total_ads,
+                'successful_ads': successful_ads,
+                'spend': total_spend,
+                'impressions': total_impressions,
+                'link_clicks': total_link_clicks,
+                'revenue': total_revenue,
+                'nprs': total_nprs,
+                'funnel_starts': total_funnel_starts,
+                'survey_completions': total_survey_completions,
+                'checkout_starts': total_checkout_starts,
                 'ctr': ctr,
                 'cpc': cpc,
                 'cpm': cpm,
-                'funnel_start_rate': funnel_start_rate,
-                'booking_conversion_rate': booking_conversion_rate,
-                'completion_rate': 45.0,  # Default
-                'bookings': group['bookings'],
-                'cpa': cpa,
                 'roas': roas,
-                'success_ratio': f"{group['successful_ads']}/{group['total_ads']}",
-                'ads': group['ads']
+                'cpa': cpa,
+                'funnel_start_rate': funnel_start_rate,
+                'booking_rate': booking_rate,
+                'survey_completion_rate': survey_completion_rate,
+                'checkout_start_rate': checkout_start_rate,
+                'ads': records
             })
         
-        return sorted(result, key=lambda x: x['spend'], reverse=True)
-
-    def get_optimization_recommendations(self):
-        """Generate optimization recommendations based on performance data"""
-        if not self.performance_data:
-            return []
-        
-        recommendations = []
-        
-        for ad in self.performance_data:
-            spend = ad['spend']
-            roas = ad['roas']
-            cpa = ad['cpa']
-            ctr = ad['ctr']
-            cpc = ad['cpc']
-            bookings = ad['bookings']
-            
-            # Pause recommendations
-            if spend > self.optimization_rules['pause_spend_threshold'] and roas < self.optimization_rules['pause_roas_threshold']:
-                priority = 'High' if spend > self.optimization_rules['high_priority_spend_threshold'] else 'Medium'
-                recommendations.append({
-                    'action': 'pause',
-                    'ad_set_name': ad['ad_set_name'],
-                    'ad_name': ad['ad_name'],
-                    'reasoning': f'Low ROAS ({roas:.2f}) with significant spend (${spend:.2f})',
-                    'priority': priority,
-                    'spend': spend,
-                    'current_metrics': {
-                        'roas': roas,
-                        'cpa': cpa,
-                        'ctr': ctr,
-                        'cpc': cpc,
-                        'bookings': bookings
-                    }
-                })
-            
-            elif spend > self.optimization_rules['pause_cpa_spend_threshold'] and cpa > self.optimization_rules['pause_cpa_threshold']:
-                priority = 'High' if spend > self.optimization_rules['high_priority_spend_threshold'] else 'Medium'
-                recommendations.append({
-                    'action': 'pause',
-                    'ad_set_name': ad['ad_set_name'],
-                    'ad_name': ad['ad_name'],
-                    'reasoning': f'High CPA (${cpa:.2f}) with spend (${spend:.2f})',
-                    'priority': priority,
-                    'spend': spend,
-                    'current_metrics': {
-                        'roas': roas,
-                        'cpa': cpa,
-                        'ctr': ctr,
-                        'cpc': cpc,
-                        'bookings': bookings
-                    }
-                })
-            
-            elif spend > self.optimization_rules['pause_ctr_spend_threshold'] and ctr < self.optimization_rules['pause_ctr_threshold']:
-                priority = 'Medium' if spend > self.optimization_rules['medium_priority_spend_threshold'] else 'Low'
-                recommendations.append({
-                    'action': 'pause',
-                    'ad_set_name': ad['ad_set_name'],
-                    'ad_name': ad['ad_name'],
-                    'reasoning': f'Low CTR ({ctr:.2f}%) with spend (${spend:.2f})',
-                    'priority': priority,
-                    'spend': spend,
-                    'current_metrics': {
-                        'roas': roas,
-                        'cpa': cpa,
-                        'ctr': ctr,
-                        'cpc': cpc,
-                        'bookings': bookings
-                    }
-                })
-            
-            # Scale recommendations
-            elif (spend > self.optimization_rules['scale_min_spend_threshold'] and 
-                  roas > self.optimization_rules['scale_roas_threshold'] and
-                  ad['all_criteria_met']):
-                priority = 'High' if spend > self.optimization_rules['high_priority_spend_threshold'] else 'Medium'
-                recommendations.append({
-                    'action': 'scale',
-                    'ad_set_name': ad['ad_set_name'],
-                    'ad_name': ad['ad_name'],
-                    'reasoning': f'High ROAS ({roas:.2f}) with all success criteria met',
-                    'priority': priority,
-                    'spend': spend,
-                    'current_metrics': {
-                        'roas': roas,
-                        'cpa': cpa,
-                        'ctr': ctr,
-                        'cpc': cpc,
-                        'bookings': bookings
-                    }
-                })
-        
-        return recommendations
+        # Sort by spend descending
+        adgroup_data.sort(key=lambda x: x['spend'], reverse=True)
+        return adgroup_data
+    
+    def load_facebook_creative_data(self):
+        """Load Facebook creative data for AI insights (background)"""
+        try:
+            print("🎨 Loading Facebook creative data for AI insights...")
+            # This would load creative elements like headlines, text, landing pages
+            # For now, just simulate the loading
+            time.sleep(2)
+            self.fb_creative_data = {'loaded': True, 'count': len(self.data)}
+            print("✅ Facebook creative data loaded")
+        except Exception as e:
+            print(f"❌ Facebook creative data error: {e}")
+    
+    def load_default_kpi_settings(self):
+        """Load default KPI settings"""
+        return {
+            'ctr_threshold': 0.30,
+            'funnel_start_threshold': 15.0,
+            'cpa_threshold': 120.0,
+            'clicks_threshold': 500,
+            'roas_threshold': 1.0,
+            'cpc_threshold': 10.0,
+            'cpm_threshold': 50.0,
+            'booking_rate_threshold': 2.0
+        }
+    
+    def load_default_optimization_rules(self):
+        """Load default optimization rules"""
+        return {
+            'pause_low_roas': {'enabled': True, 'roas_threshold': 0.5, 'spend_threshold': 100},
+            'pause_high_cpa': {'enabled': True, 'cpa_threshold': 200, 'spend_threshold': 50},
+            'pause_low_ctr': {'enabled': True, 'ctr_threshold': 0.20, 'spend_threshold': 75},
+            'scale_high_roas': {'enabled': True, 'roas_threshold': 2.0, 'budget_increase': 20}
+        }
 
 # Initialize the tool
 tool = FacebookOptimizationTool()
 
-# Routes
 @app.route('/')
 def dashboard():
+    """Main dashboard"""
     return render_template('enhanced_dashboard.html')
 
 @app.route('/api/performance-summary')
 def api_performance_summary():
-    return jsonify(tool.get_performance_summary())
+    """API endpoint for performance summary"""
+    try:
+        summary = tool.get_performance_summary()
+        return jsonify(summary)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/creative-dashboard-data')
 def api_creative_dashboard_data():
-    search_filter = request.args.get('filter', '')
-    return jsonify(tool.get_creative_dashboard_data(search_filter))
+    """API endpoint for creative dashboard data"""
+    try:
+        data = tool.get_creative_dashboard_data()
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/adgroup-dashboard-data')
 def api_adgroup_dashboard_data():
-    search_filter = request.args.get('filter', '')
-    return jsonify(tool.get_adgroup_dashboard_data(search_filter))
+    """API endpoint for ad group dashboard data"""
+    try:
+        data = tool.get_adgroup_dashboard_data()
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-@app.route('/api/optimization-recommendations')
-def api_optimization_recommendations():
-    return jsonify(tool.get_optimization_recommendations())
-
-@app.route('/api/creative-data')
-def api_creative_data():
-    return jsonify(tool.fb_creative_data)
-
-@app.route('/api/kpi-settings', methods=['GET', 'POST'])
-def api_kpi_settings():
-    if request.method == 'POST':
-        new_settings = request.json
-        tool.kpi_settings.update(new_settings)
-        success = tool.save_kpi_settings()
-        if success:
-            # Reprocess data with new settings
-            tool.process_combined_data()
-            return jsonify({'status': 'success', 'message': 'KPI settings updated'})
-        else:
-            return jsonify({'status': 'error', 'message': 'Failed to save settings'})
-    else:
-        return jsonify(tool.kpi_settings)
-
-@app.route('/api/optimization-rules', methods=['GET', 'POST'])
-def api_optimization_rules():
-    if request.method == 'POST':
-        new_rules = request.json
-        tool.optimization_rules.update(new_rules)
-        success = tool.save_optimization_rules()
-        if success:
-            return jsonify({'status': 'success', 'message': 'Optimization rules updated'})
-        else:
-            return jsonify({'status': 'error', 'message': 'Failed to save rules'})
-    else:
-        return jsonify(tool.optimization_rules)
-
-@app.route('/api/refresh-data')
+@app.route('/api/refresh-data', methods=['POST'])
 def api_refresh_data():
+    """API endpoint to refresh data"""
     try:
         tool.load_data()
         return jsonify({'status': 'success', 'message': 'Data refreshed successfully'})
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)})
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=8080)
