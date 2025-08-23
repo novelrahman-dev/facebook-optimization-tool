@@ -159,6 +159,11 @@ class FacebookOptimizationTool:
                     
                 else:
                     print(f"❌ Facebook API error: {response.status_code}")
+                    try:
+                        error_data = response.json()
+                        print(f"❌ Facebook API error details: {error_data}")
+                    except:
+                        print(f"❌ Facebook API response text: {response.text}")
                     break
             
             print(f"✅ Loaded {len(fb_api_data)} ad combinations from Facebook API")
