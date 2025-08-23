@@ -138,12 +138,12 @@ class FacebookOptimizationTool:
             
             fb_api_data = {}
             page_count = 0
-            max_pages = 20  # Reasonable limit
+            max_pages = 5  # Reduced limit to prevent timeout
             
             print(f"🔄 Loading Facebook API data from {start_date} to {end_date}")
             
             while url and page_count < max_pages:
-                response = requests.get(url, params=params, timeout=30)
+                response = requests.get(url, params=params, timeout=15)  # Reduced timeout
                 
                 if response.status_code == 200:
                     data = response.json()
@@ -200,17 +200,137 @@ class FacebookOptimizationTool:
         # Load Google Sheets data
         fb_data, attr_data, web_data = self.load_google_sheets_data()
         
-        # Load Facebook API data for impressions/clicks
-        fb_api_data = self.load_facebook_api_data()
+        # Start Facebook API data loading in background to prevent timeout
+        self.fb_api_data = {}
+        threading.Thread(target=self.load_facebook_api_data_background, daemon=True).start()
         
-        print(f"🔄 Processing data: {len(fb_data)} fb, {len(attr_data)} attr, {len(web_data)} web, {len(fb_api_data)} fb_api")
+        # Process data with Google Sheets only initially
+        print(f"🔄 Processing data: {len(fb_data)} fb, {len(attr_data)} attr, {len(web_data)} web, 0 fb_api (loading in background)")
         
-        # Process and combine data
-        self.data = self.process_combined_data(fb_data, attr_data, web_data, fb_api_data)
-        
+        self.data = self.process_data(fb_data, attr_data, web_data, {})
         print(f"✅ Processed {len(self.data)} combined records")
     
-    def process_combined_data(self, fb_data, attr_data, web_data, fb_api_data):
+    def load_facebook_api_data_background(self):
+        """Load Facebook API data in background"""
+        print("🔄 Loading Facebook API data in background...")
+        
+        # Get target count from FB Spend data
+        fb_data, _, _ = self.load_google_sheets_data()
+        target_ads = len([row for row in fb_data if row.get('Facebook Ad Name') and 
+                         str(row.get('Facebook Ad Name')).lower() != 'total'])
+        
+        print(f"🎯 Target: {target_ads} ads from FB Spend data")
+        
+        self.fb_api_data = self.load_facebook_api_data_complete(target_ads)
+        
+        # Reprocess data with Facebook API data when available
+        if self.fb_api_data:
+            print("🔄 Reprocessing data with Facebook API data...")
+            fb_data, attr_data, web_data = self.load_google_sheets_data()
+            self.data = self.process_data(fb_data, attr_data, web_data, self.fb_api_data)
+            print(f"✅ Reprocessed {len(self.data)} records with Facebook API data")
+    
+    def load_facebook_api_data_complete(self, target_count):
+        """Load Facebook API data until target count is reached"""
+        try:
+            if not self.fb_access_token or not self.fb_ad_account_id:
+                print("❌ Facebook API not configured")
+                return {}
+            
+            # Get date range synchronized with Google Docs update schedule (10 AM and 10 PM EST)
+            import pytz
+            est = pytz.timezone('US/Eastern')
+            now_est = datetime.now(est)
+            
+            # Determine the last update time based on current EST time
+            if now_est.hour >= 22:  # After 10 PM EST
+                # Use today's date (data updated at 10 PM)
+                end_date = now_est.strftime("%Y-%m-%d")
+            elif now_est.hour >= 10:  # Between 10 AM and 10 PM EST
+                # Use today's date (data updated at 10 AM)
+                end_date = now_est.strftime("%Y-%m-%d")
+            else:  # Before 10 AM EST
+                # Use yesterday's date (last update was yesterday 10 PM)
+                yesterday = now_est - timedelta(days=1)
+                end_date = yesterday.strftime("%Y-%m-%d")
+            
+            start_date = "2025-06-01"
+            
+            # Handle ad account ID format - remove act_ prefix if present
+            ad_account_id = self.fb_ad_account_id
+            if ad_account_id.startswith('act_'):
+                ad_account_id = ad_account_id[4:]  # Remove 'act_' prefix
+            
+            url = f"https://graph.facebook.com/v18.0/act_{ad_account_id}/ads"
+            params = {
+                'access_token': self.fb_access_token,
+                'fields': 'name,adset{name},insights{impressions,clicks}',
+                'time_range': f'{{"since":"{start_date}","until":"{end_date}"}}',
+                'limit': 50  # Smaller page size for slower loading
+            }
+            
+            fb_api_data = {}
+            page_count = 0
+            total_ads_loaded = 0
+            
+            print(f"🔄 Loading Facebook API data from {start_date} to {end_date}")
+            
+            while url and total_ads_loaded < target_count:
+                response = requests.get(url, params=params, timeout=15)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    ads = data.get('data', [])
+                    
+                    page_count += 1
+                    total_ads_loaded += len(ads)
+                    print(f"📡 Loaded page {page_count}: {len(ads)} ads (total: {total_ads_loaded}/{target_count})")
+                    
+                    for ad in ads:
+                        ad_name = ad.get('name', '')
+                        adset_info = ad.get('adset', {})
+                        adset_name = adset_info.get('name', '') if adset_info else ''
+                        insights = ad.get('insights', {}).get('data', [])
+                        
+                        if ad_name and adset_name and insights:
+                            # Sum up insights data
+                            total_impressions = sum(int(insight.get('impressions', 0)) for insight in insights)
+                            total_clicks = sum(int(insight.get('clicks', 0)) for insight in insights)
+                            
+                            # Create combination key
+                            combo_key = f"{adset_name}|||{ad_name}"
+                            fb_api_data[combo_key] = {
+                                'impressions': total_impressions,
+                                'link_clicks': total_clicks,
+                                'ad_name': ad_name,
+                                'adset_name': adset_name
+                            }
+                    
+                    # Get next page
+                    paging = data.get('paging', {})
+                    url = paging.get('next')
+                    params = {}  # Next URL already has params
+                    
+                    # Add delay to prevent rate limiting
+                    time.sleep(1)  # 1 second delay between requests
+                    
+                else:
+                    print(f"❌ Facebook API error: {response.status_code}")
+                    try:
+                        error_data = response.json()
+                        print(f"❌ Facebook API error details: {error_data}")
+                    except:
+                        print(f"❌ Facebook API response text: {response.text}")
+                    break
+            
+            print(f"✅ Loaded {len(fb_api_data)} ad combinations from Facebook API (target: {target_count})")
+            return fb_api_data
+            
+        except Exception as e:
+            print(f"❌ Facebook API error: {e}")
+            return {}
+    
+    def process_data(self, fb_data, attr_data, web_data, fb_api_data):
         """Process and combine data from all sources"""
         combined_data = []
         
