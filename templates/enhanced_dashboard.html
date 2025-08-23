@@ -1106,71 +1106,83 @@
                 summaryGrid.innerHTML = `
                     <div class="summary-card">
                         <h3>Total Ads</h3>
-                        <div class="value">${data.total_ads}</div>
+                        <div class="value">${data.total_ads || 0}</div>
                     </div>
                     <div class="summary-card">
                         <h3>Total Spend</h3>
-                        <div class="value">$${data.total_spend.toLocaleString()}</div>
+                        <div class="value">$${(data.total_spend || 0).toLocaleString()}</div>
                     </div>
                     <div class="summary-card">
                         <h3>Total Revenue</h3>
-                        <div class="value">$${data.total_revenue.toLocaleString()}</div>
+                        <div class="value">$${(data.total_revenue || 0).toLocaleString()}</div>
                     </div>
                     <div class="summary-card">
                         <h3>Total Impressions</h3>
-                        <div class="value">${data.total_impressions.toLocaleString()}</div>
+                        <div class="value">${(data.total_impressions || 0).toLocaleString()}</div>
                     </div>
                     <div class="summary-card">
                         <h3>Total Clicks</h3>
-                        <div class="value">${data.total_clicks.toLocaleString()}</div>
+                        <div class="value">${(data.total_link_clicks || 0).toLocaleString()}</div>
                     </div>
                     <div class="summary-card">
                         <h3>Total Bookings</h3>
-                        <div class="value">${data.total_bookings.toLocaleString()}</div>
+                        <div class="value">${(data.total_nprs || 0).toLocaleString()}</div>
                     </div>
                     <div class="summary-card">
                         <h3>Total Offer Spend</h3>
-                        <div class="value">$${data.total_offer_spend.toLocaleString()}</div>
+                        <div class="value">$${(data.total_offer_spend || 0).toLocaleString()}</div>
                     </div>
                     <div class="summary-card">
                         <h3>Overall CTR</h3>
-                        <div class="value">${data.overall_ctr.toFixed(2)}%</div>
+                        <div class="value">${(data.overall_ctr || 0).toFixed(2)}%</div>
                     </div>
                     <div class="summary-card">
                         <h3>Average CPC</h3>
-                        <div class="value">$${data.avg_cpc.toFixed(2)}</div>
+                        <div class="value">$${(data.average_cpc || 0).toFixed(2)}</div>
                     </div>
                     <div class="summary-card">
                         <h3>Average CPM</h3>
-                        <div class="value">$${data.avg_cpm.toFixed(2)}</div>
+                        <div class="value">$${(data.average_cpm || 0).toFixed(2)}</div>
                     </div>
                     <div class="summary-card">
                         <h3>Overall ROAS</h3>
-                        <div class="value">${data.overall_roas.toFixed(2)}</div>
+                        <div class="value">${(data.overall_roas || 0).toFixed(2)}</div>
                     </div>
                     <div class="summary-card">
                         <h3>Average CPA</h3>
-                        <div class="value">$${data.avg_cpa.toFixed(2)}</div>
+                        <div class="value">$${(data.average_cpa || 0).toFixed(2)}</div>
                     </div>
                     <div class="summary-card">
-                        <h3>Average Completion %</h3>
-                        <div class="value">${(data.avg_completion_rate * 100).toFixed(1)}%</div>
+                        <h3>CAC</h3>
+                        <div class="value">$${(data.cac || 0).toFixed(2)}</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>LTV</h3>
+                        <div class="value">$${(data.ltv || 0).toFixed(2)}</div>
                     </div>
                     <div class="summary-card">
                         <h3>Average Funnel Start %</h3>
-                        <div class="value">${data.avg_funnel_start_rate.toFixed(1)}%</div>
+                        <div class="value">${(data.funnel_start_rate || 0).toFixed(1)}%</div>
                     </div>
                     <div class="summary-card">
                         <h3>Average Booking %</h3>
-                        <div class="value">${data.avg_booking_rate.toFixed(1)}%</div>
+                        <div class="value">${(data.booking_rate || 0).toFixed(1)}%</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Survey Completion %</h3>
+                        <div class="value">${(data.survey_completion_rate || 0).toFixed(1)}%</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Checkout Start %</h3>
+                        <div class="value">${(data.checkout_start_rate || 0).toFixed(1)}%</div>
                     </div>
                     <div class="summary-card">
                         <h3>ROI</h3>
-                        <div class="value">${data.roi.toFixed(1)}%</div>
+                        <div class="value">${(data.roi || 0).toFixed(1)}%</div>
                     </div>
                     <div class="summary-card">
                         <h3>Successful Ads</h3>
-                        <div class="value">${data.successful_ads}</div>
+                        <div class="value">${data.successful_ads || 0}</div>
                     </div>
                 `;
             } catch (error) {
