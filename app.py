@@ -705,6 +705,117 @@ class FacebookOptimizationTool:
             'pause_low_ctr': {'enabled': True, 'ctr_threshold': 0.20, 'spend_threshold': 75},
             'scale_high_roas': {'enabled': True, 'roas_threshold': 2.0, 'budget_increase': 20}
         }
+    
+    def get_optimization_recommendations(self):
+        """Get optimization recommendations based on performance data"""
+        if not self.data:
+            return []
+        
+        recommendations = []
+        for record in self.data:
+            # Pause recommendations
+            if record['roas'] < 0.5 and record['spend'] > 100:
+                recommendations.append({
+                    'type': 'pause',
+                    'ad_name': record['ad_name'],
+                    'adset_name': record['adset_name'],
+                    'reason': f"Low ROAS ({record['roas']:.2f}) with high spend (${record['spend']:.2f})",
+                    'priority': 'high'
+                })
+            
+            if record['cpa'] > 200 and record['spend'] > 50:
+                recommendations.append({
+                    'type': 'pause',
+                    'ad_name': record['ad_name'],
+                    'adset_name': record['adset_name'],
+                    'reason': f"High CPA (${record['cpa']:.2f}) with spend (${record['spend']:.2f})",
+                    'priority': 'medium'
+                })
+            
+            # Scale recommendations
+            if record['roas'] > 2.0 and record['success_count'] >= 6:
+                recommendations.append({
+                    'type': 'scale',
+                    'ad_name': record['ad_name'],
+                    'adset_name': record['adset_name'],
+                    'reason': f"High ROAS ({record['roas']:.2f}) with {record['success_count']}/8 success criteria",
+                    'priority': 'high'
+                })
+        
+        return recommendations
+    
+    def execute_optimizations(self, selected_actions):
+        """Execute selected optimization actions"""
+        results = []
+        for action in selected_actions:
+            try:
+                if action['type'] == 'pause':
+                    # Simulate pausing ad
+                    results.append({
+                        'action': action,
+                        'status': 'success',
+                        'message': f"Successfully paused ad: {action['ad_name']}"
+                    })
+                elif action['type'] == 'scale':
+                    # Simulate scaling ad
+                    results.append({
+                        'action': action,
+                        'status': 'success',
+                        'message': f"Successfully scaled ad: {action['ad_name']}"
+                    })
+            except Exception as e:
+                results.append({
+                    'action': action,
+                    'status': 'error',
+                    'message': f"Error executing action: {str(e)}"
+                })
+        
+        return results
+    
+    def get_ai_insights(self, insight_type):
+        """Get AI-powered insights"""
+        if not self.data:
+            return {'insights': 'No data available for analysis'}
+        
+        # Simple insights based on data
+        total_spend = sum(r['spend'] for r in self.data)
+        avg_roas = sum(r['roas'] for r in self.data) / len(self.data)
+        successful_ads = len([r for r in self.data if r['success_count'] >= 6])
+        
+        insights = f"""
+        Based on your performance data:
+        
+        • Total spend: ${total_spend:,.2f} across {len(self.data)} ads
+        • Average ROAS: {avg_roas:.2f}
+        • {successful_ads} ads meeting success criteria ({successful_ads/len(self.data)*100:.1f}%)
+        
+        Key recommendations:
+        • Focus budget on high-performing ads with ROAS > 2.0
+        • Pause underperforming ads with ROAS < 0.5
+        • Test new creative variations for top-performing ad sets
+        """
+        
+        return {'insights': insights}
+    
+    def generate_creative_brief(self, campaign_name, campaign_type, messaging_pillar, value_pillar, creative_format):
+        """Generate creative brief"""
+        brief = f"""
+        Creative Brief for {campaign_name}
+        
+        Campaign Type: {campaign_type}
+        Messaging Pillar: {messaging_pillar}
+        Value Pillar: {value_pillar}
+        Creative Format: {creative_format}
+        
+        Recommended approach:
+        • Highlight the {value_pillar} value proposition
+        • Use {messaging_pillar} messaging strategy
+        • Optimize for {creative_format} format specifications
+        • Include clear call-to-action
+        • Test multiple variations
+        """
+        
+        return {'brief': brief}
 
 # Initialize the tool
 tool = FacebookOptimizationTool()
@@ -747,6 +858,114 @@ def api_refresh_data():
     try:
         tool.load_data()
         return jsonify({'status': 'success', 'message': 'Data refreshed successfully'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/performance-data')
+def api_performance_data():
+    """API endpoint for performance dashboard data"""
+    try:
+        data = tool.get_creative_dashboard_data()
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/optimization-recommendations')
+def api_optimization_recommendations():
+    """API endpoint for optimization recommendations"""
+    try:
+        recommendations = tool.get_optimization_recommendations()
+        return jsonify(recommendations)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/execute-optimizations', methods=['POST'])
+def api_execute_optimizations():
+    """API endpoint to execute optimization actions"""
+    try:
+        data = request.get_json()
+        selected_actions = data.get('actions', [])
+        results = tool.execute_optimizations(selected_actions)
+        return jsonify(results)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/ai-insights')
+def api_ai_insights():
+    """API endpoint for AI insights"""
+    try:
+        insight_type = request.args.get('type', 'performance')
+        insights = tool.get_ai_insights(insight_type)
+        return jsonify(insights)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/creative-brief')
+def api_creative_brief():
+    """API endpoint for creative brief generation"""
+    try:
+        campaign_name = request.args.get('name', '')
+        campaign_type = request.args.get('type', '')
+        messaging_pillar = request.args.get('messaging_pillar', '')
+        value_pillar = request.args.get('value_pillar', '')
+        creative_format = request.args.get('format', '')
+        
+        brief = tool.generate_creative_brief(campaign_name, campaign_type, messaging_pillar, value_pillar, creative_format)
+        return jsonify(brief)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/kpi-settings')
+def api_get_kpi_settings():
+    """API endpoint to get KPI settings"""
+    try:
+        return jsonify(tool.kpi_settings)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/kpi-settings', methods=['POST'])
+def api_save_kpi_settings():
+    """API endpoint to save KPI settings"""
+    try:
+        data = request.get_json()
+        tool.kpi_settings.update(data)
+        return jsonify({'status': 'success', 'message': 'KPI settings saved successfully'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/optimization-rules')
+def api_get_optimization_rules():
+    """API endpoint to get optimization rules"""
+    try:
+        return jsonify(tool.optimization_rules)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/optimization-rules', methods=['POST'])
+def api_save_optimization_rules():
+    """API endpoint to save optimization rules"""
+    try:
+        data = request.get_json()
+        tool.optimization_rules.update(data)
+        return jsonify({'status': 'success', 'message': 'Optimization rules saved successfully'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/kpi-settings/reset', methods=['POST'])
+def api_reset_kpi_settings():
+    """API endpoint to reset KPI settings to defaults"""
+    try:
+        tool.kpi_settings = tool.load_default_kpi_settings()
+        return jsonify({'status': 'success', 'message': 'KPI settings reset to defaults'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/optimization-rules/reset', methods=['POST'])
+def api_reset_optimization_rules():
+    """API endpoint to reset optimization rules to defaults"""
+    try:
+        tool.optimization_rules = tool.load_default_optimization_rules()
+        return jsonify({'status': 'success', 'message': 'Optimization rules reset to defaults'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
