@@ -448,11 +448,108 @@ class FacebookOptimizationTool:
             return 0.0
     
     def get_performance_summary(self):
-        """Get performance summary with corrected calculations"""
+        """Get performance summary with corrected calculations matching the KPI analysis"""
         if not self.data:
             return {}
         
-        # Calculate totals
+        # Get totals from Google Sheets (last rows) - matching corrected_final_kpis.py
+        try:
+            fb_data, attr_data, web_data = self.load_google_sheets_data()
+            
+            # Get totals from last rows
+            fb_totals = fb_data[-1] if fb_data else {}
+            attr_totals = attr_data[-1] if attr_data else {}
+            web_totals = web_data[-1] if web_data else {}
+            
+            # Extract corrected values from Google Sheets
+            total_spend = self.clean_numeric(fb_totals.get('Facebook Total Spend (USD)', 0))
+            total_revenue = self.clean_numeric(attr_totals.get('Attribution Attibuted Total Revenue (Predicted) (USD)', 0))
+            total_offer_spend = self.clean_numeric(attr_totals.get('Attribution Attibuted Offer Spend (Predicted) (USD)', 0))
+            total_nprs = self.clean_numeric(attr_totals.get('Attribution Attributed NPRs', 0))
+            pas_rate = self.clean_numeric(attr_totals.get('Attribution Attibuted PAS (Predicted)', 0))
+            
+            # Web Pages data (columns D, E, F from totals row)
+            web_values = list(web_totals.values()) if web_totals else [0] * 10
+            total_funnel_starts = self.clean_numeric(web_values[3]) if len(web_values) > 3 else 0  # Column D
+            total_survey_completions = self.clean_numeric(web_values[4]) if len(web_values) > 4 else 0  # Column E
+            total_checkout_starts = self.clean_numeric(web_values[5]) if len(web_values) > 5 else 0  # Column F
+            
+            # Use Facebook API data for accurate traffic metrics
+            if self.fb_api_data:
+                total_impressions = sum(self.clean_numeric(ad.get('impressions', 0)) for ad in self.fb_api_data)
+                total_link_clicks = sum(self.clean_numeric(ad.get('link_clicks', 0)) for ad in self.fb_api_data)
+            else:
+                # Fallback to aggregated data if FB API not available
+                total_impressions = sum(record['impressions'] for record in self.data)
+                total_link_clicks = sum(record['link_clicks'] for record in self.data)
+            
+            # Count unique ads and ad sets
+            total_ads = len(self.data)
+            unique_ads = len(set(record['ad_name'] for record in self.data))
+            unique_adsets = len(set(record['adset_name'] for record in self.data))
+            
+            # Calculate corrected performance ratios
+            overall_ctr = (total_link_clicks / total_impressions * 100) if total_impressions > 0 else 0
+            average_cpc = (total_spend / total_link_clicks) if total_link_clicks > 0 else 0
+            average_cpm = (total_spend / total_impressions * 1000) if total_impressions > 0 else 0
+            overall_roas = (total_revenue / total_spend) if total_spend > 0 else 0
+            average_cpa = (total_spend / total_nprs) if total_nprs > 0 else 0  # CORRECTED: Spend ÷ NPRs
+            
+            # Completion and LTV
+            completed_bookings = total_nprs * pas_rate
+            total_cost = total_spend + total_offer_spend
+            cac = (total_cost / completed_bookings) if completed_bookings > 0 else 0
+            ltv = (total_revenue / completed_bookings) if completed_bookings > 0 else 0
+            
+            # Corrected funnel metrics using Facebook API traffic data
+            funnel_start_rate = (total_funnel_starts / total_link_clicks * 100) if total_link_clicks > 0 else 0
+            booking_rate = (total_nprs / total_link_clicks * 100) if total_link_clicks > 0 else 0
+            survey_completion_rate = (total_survey_completions / total_funnel_starts * 100) if total_funnel_starts > 0 else 0
+            checkout_start_rate = (total_checkout_starts / total_survey_completions * 100) if total_survey_completions > 0 else 0
+            
+            # ROI
+            roi = ((total_revenue - total_offer_spend - total_spend) / total_revenue * 100) if total_revenue > 0 else 0
+            
+            # Success ads
+            successful_ads = len([r for r in self.data if r['success_count'] >= 6])
+            
+            return {
+                'total_ads': total_ads,
+                'unique_ads': unique_ads,
+                'unique_adsets': unique_adsets,
+                'total_spend': total_spend,
+                'total_revenue': total_revenue,
+                'total_offer_spend': total_offer_spend,
+                'total_cost': total_cost,
+                'total_impressions': total_impressions,
+                'total_link_clicks': total_link_clicks,
+                'total_nprs': total_nprs,
+                'completed_bookings': completed_bookings,
+                'total_funnel_starts': total_funnel_starts,
+                'total_survey_completions': total_survey_completions,
+                'total_checkout_starts': total_checkout_starts,
+                'overall_ctr': overall_ctr,
+                'average_cpc': average_cpc,
+                'average_cpm': average_cpm,
+                'overall_roas': overall_roas,
+                'average_cpa': average_cpa,
+                'cac': cac,
+                'ltv': ltv,
+                'funnel_start_rate': funnel_start_rate,
+                'booking_rate': booking_rate,
+                'survey_completion_rate': survey_completion_rate,
+                'checkout_start_rate': checkout_start_rate,
+                'roi': roi,
+                'successful_ads': successful_ads
+            }
+            
+        except Exception as e:
+            print(f"❌ Error in get_performance_summary: {e}")
+            # Fallback to aggregated data
+            return self.get_performance_summary_fallback()
+    
+    def get_performance_summary_fallback(self):
+        """Fallback performance summary using aggregated data"""
         total_ads = len(self.data)
         unique_ads = len(set(record['ad_name'] for record in self.data))
         unique_adsets = len(set(record['adset_name'] for record in self.data))
@@ -472,10 +569,10 @@ class FacebookOptimizationTool:
         average_cpc = (total_spend / total_link_clicks) if total_link_clicks > 0 else 0
         average_cpm = (total_spend / total_impressions * 1000) if total_impressions > 0 else 0
         overall_roas = (total_revenue / total_spend) if total_spend > 0 else 0
-        average_cpa = (total_spend / total_nprs) if total_nprs > 0 else 0  # CORRECTED
+        average_cpa = (total_spend / total_nprs) if total_nprs > 0 else 0
         
         # Completion and LTV
-        pas_rate = 0.479  # 47.9% from attribution data
+        pas_rate = 0.479
         completed_bookings = total_nprs * pas_rate
         total_cost = total_spend + total_offer_spend
         cac = (total_cost / completed_bookings) if completed_bookings > 0 else 0
@@ -519,7 +616,6 @@ class FacebookOptimizationTool:
             'booking_rate': booking_rate,
             'survey_completion_rate': survey_completion_rate,
             'checkout_start_rate': checkout_start_rate,
-            'completion_rate': pas_rate * 100,
             'roi': roi,
             'successful_ads': successful_ads
         }
