@@ -9,6 +9,7 @@ import csv
 import io
 from datetime import datetime, timedelta
 import time
+import threading
 
 app = Flask(__name__)
 CORS(app)
@@ -62,17 +63,23 @@ class FacebookOptimizationTool:
         self.load_kpi_settings()
         self.load_optimization_rules()
         
-        # Initialize APIs
-        self.init_google_sheets()
-        self.init_facebook_api()
-        
-        # Load data
+        # Initialize data containers
         self.performance_data = []
         self.web_data = []
         self.attr_data = []
         self.fb_data = []
         self.fb_creative_data = {'adsets': [], 'ads': [], 'last_updated': None}
+        self.gc = None
+        
+        # Initialize APIs
+        self.init_google_sheets()
+        self.init_facebook_api()
+        
+        # Load data
         self.load_data()
+        
+        # Start Facebook creative data loading in background
+        self.start_background_facebook_loading()
         
         print("✅ Facebook Optimization Tool initialized")
 
@@ -129,14 +136,18 @@ class FacebookOptimizationTool:
             return False
 
     def init_google_sheets(self):
-        """Initialize Google Sheets API"""
+        """Initialize Google Sheets API with better error handling"""
         try:
             if not self.google_credentials:
-                print("❌ Google credentials not found")
-                return
+                print("❌ Google credentials not found in environment")
+                return False
             
             # Parse credentials from environment variable
-            creds_dict = json.loads(self.google_credentials)
+            try:
+                creds_dict = json.loads(self.google_credentials)
+            except json.JSONDecodeError as e:
+                print(f"❌ Invalid Google credentials JSON format: {e}")
+                return False
             
             # Set up credentials
             scopes = [
@@ -147,60 +158,98 @@ class FacebookOptimizationTool:
             credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
             self.gc = gspread.authorize(credentials)
             
-            print("✅ Google Sheets API initialized")
+            # Test the connection
+            try:
+                # Try to access the spreadsheet to verify credentials work
+                test_sheet = self.gc.open("Opencare Facebook Ads Performance Tracker")
+                print("✅ Google Sheets API initialized and tested")
+                return True
+            except Exception as e:
+                print(f"❌ Google Sheets access test failed: {e}")
+                return False
             
         except Exception as e:
             print(f"❌ Google Sheets initialization error: {e}")
+            return False
 
     def init_facebook_api(self):
         """Initialize Facebook API for creative insights only"""
         try:
             if not self.fb_access_token or not self.fb_ad_account_id:
                 print("⚠️ Facebook API credentials not available")
-                return
+                return False
             
             print("✅ Facebook API credentials configured")
+            return True
             
         except Exception as e:
             print(f"❌ Facebook API initialization error: {e}")
+            return False
 
     def load_data(self):
-        """Load data from all sources"""
+        """Load data from Google Sheets only"""
         try:
             self.load_google_sheets_data()
             self.process_combined_data()
-            # Load Facebook creative data in background for AI insights
-            self.load_facebook_creative_data()
             
         except Exception as e:
             print(f"❌ Data loading error: {e}")
 
     def load_google_sheets_data(self):
-        """Load data from Google Sheets"""
+        """Load data from Google Sheets with better error handling"""
         try:
+            if not self.gc:
+                print("❌ Google Sheets not initialized")
+                return
+            
             # Web Pages data
-            web_sheet = self.gc.open("Opencare Facebook Ads Performance Tracker").worksheet("Web Pages")
-            web_data = web_sheet.get_all_records()
-            self.web_data = [row for row in web_data if row.get('Web Pages UTM Content') and str(row.get('Web Pages UTM Content')).lower() != 'total']
-            print(f"✅ Loaded {len(self.web_data)} rows from web_pages")
+            try:
+                web_sheet = self.gc.open("Opencare Facebook Ads Performance Tracker").worksheet("Web Pages")
+                web_data = web_sheet.get_all_records()
+                self.web_data = [row for row in web_data if row.get('Web Pages UTM Content') and str(row.get('Web Pages UTM Content')).lower() != 'total']
+                print(f"✅ Loaded {len(self.web_data)} rows from web_pages")
+            except Exception as e:
+                print(f"❌ Error loading Web Pages sheet: {e}")
+                self.web_data = []
             
             # Attribution data
-            attr_sheet = self.gc.open("Opencare Facebook Ads Performance Tracker").worksheet("Attribution")
-            attr_data = attr_sheet.get_all_records()
-            self.attr_data = [row for row in attr_data if row.get('Attribution UTM Content') and str(row.get('Attribution UTM Content')).lower() != 'total']
-            print(f"✅ Loaded {len(self.attr_data)} rows from attribution")
+            try:
+                attr_sheet = self.gc.open("Opencare Facebook Ads Performance Tracker").worksheet("Attribution")
+                attr_data = attr_sheet.get_all_records()
+                self.attr_data = [row for row in attr_data if row.get('Attribution UTM Content') and str(row.get('Attribution UTM Content')).lower() != 'total']
+                print(f"✅ Loaded {len(self.attr_data)} rows from attribution")
+            except Exception as e:
+                print(f"❌ Error loading Attribution sheet: {e}")
+                self.attr_data = []
             
             # Facebook Spend data
-            fb_sheet = self.gc.open("Opencare Facebook Ads Performance Tracker").worksheet("Facebook Spend")
-            fb_data = fb_sheet.get_all_records()
-            self.fb_data = [row for row in fb_data if row.get('Facebook Ad Name') and str(row.get('Facebook Ad Name')).lower() != 'total']
-            print(f"✅ Loaded {len(self.fb_data)} rows from fb_spend")
+            try:
+                fb_sheet = self.gc.open("Opencare Facebook Ads Performance Tracker").worksheet("Facebook Spend")
+                fb_data = fb_sheet.get_all_records()
+                self.fb_data = [row for row in fb_data if row.get('Facebook Ad Name') and str(row.get('Facebook Ad Name')).lower() != 'total']
+                print(f"✅ Loaded {len(self.fb_data)} rows from fb_spend")
+            except Exception as e:
+                print(f"❌ Error loading Facebook Spend sheet: {e}")
+                self.fb_data = []
             
         except Exception as e:
             print(f"❌ Google Sheets loading error: {e}")
 
+    def start_background_facebook_loading(self):
+        """Start Facebook creative data loading in background thread"""
+        def load_facebook_data():
+            try:
+                time.sleep(5)  # Wait 5 seconds after app startup
+                self.load_facebook_creative_data()
+            except Exception as e:
+                print(f"❌ Background Facebook loading error: {e}")
+        
+        # Start in background thread to prevent blocking
+        thread = threading.Thread(target=load_facebook_data, daemon=True)
+        thread.start()
+
     def load_facebook_creative_data(self):
-        """Load Facebook creative data for AI insights only"""
+        """Load Facebook creative data for AI insights only (non-blocking)"""
         try:
             if not self.fb_access_token or not self.fb_ad_account_id:
                 print("⚠️ Facebook API credentials not available for creative data")
@@ -208,39 +257,47 @@ class FacebookOptimizationTool:
             
             print("🎨 Loading Facebook creative data for AI insights...")
             
-            # Load ad sets with creative data
-            adsets_url = f"https://graph.facebook.com/v18.0/{self.fb_ad_account_id}/adsets"
-            adsets_params = {
-                'access_token': self.fb_access_token,
-                'fields': 'name,campaign{name},targeting,daily_budget,lifetime_budget,status',
-                'limit': 1000
-            }
+            # Load ad sets with creative data (with timeout)
+            try:
+                adsets_url = f"https://graph.facebook.com/v18.0/{self.fb_ad_account_id}/adsets"
+                adsets_params = {
+                    'access_token': self.fb_access_token,
+                    'fields': 'name,campaign{name},targeting,daily_budget,lifetime_budget,status',
+                    'limit': 100  # Reduced limit to prevent timeouts
+                }
+                
+                adsets_response = requests.get(adsets_url, params=adsets_params, timeout=15)
+                adsets_data = []
+                
+                if adsets_response.status_code == 200:
+                    adsets_data = adsets_response.json().get('data', [])
+                    print(f"✅ Facebook creative data loaded: {len(adsets_data)} ad sets")
+                else:
+                    print(f"⚠️ Facebook adsets API error: {adsets_response.status_code}")
+            except Exception as e:
+                print(f"⚠️ Facebook adsets loading error: {e}")
+                adsets_data = []
             
-            adsets_response = requests.get(adsets_url, params=adsets_params, timeout=30)
-            adsets_data = []
-            
-            if adsets_response.status_code == 200:
-                adsets_data = adsets_response.json().get('data', [])
-                print(f"✅ Facebook creative data loaded: {len(adsets_data)} ad sets")
-            else:
-                print(f"⚠️ Facebook adsets API error: {adsets_response.status_code}")
-            
-            # Load ads with creative data
-            ads_url = f"https://graph.facebook.com/v18.0/{self.fb_ad_account_id}/ads"
-            ads_params = {
-                'access_token': self.fb_access_token,
-                'fields': 'name,adset{name},creative{title,body,image_url,video_id,object_story_spec},status',
-                'limit': 1000
-            }
-            
-            ads_response = requests.get(ads_url, params=ads_params, timeout=30)
-            ads_data = []
-            
-            if ads_response.status_code == 200:
-                ads_data = ads_response.json().get('data', [])
-                print(f"✅ Facebook creative data loaded: {len(adsets_data)} ad sets, {len(ads_data)} ads")
-            else:
-                print(f"⚠️ Facebook ads API error: {ads_response.status_code}")
+            # Load ads with creative data (with timeout)
+            try:
+                ads_url = f"https://graph.facebook.com/v18.0/{self.fb_ad_account_id}/ads"
+                ads_params = {
+                    'access_token': self.fb_access_token,
+                    'fields': 'name,adset{name},creative{title,body,image_url,video_id,object_story_spec},status',
+                    'limit': 100  # Reduced limit to prevent timeouts
+                }
+                
+                ads_response = requests.get(ads_url, params=ads_params, timeout=15)
+                ads_data = []
+                
+                if ads_response.status_code == 200:
+                    ads_data = ads_response.json().get('data', [])
+                    print(f"✅ Facebook creative data loaded: {len(adsets_data)} ad sets, {len(ads_data)} ads")
+                else:
+                    print(f"⚠️ Facebook ads API error: {ads_response.status_code}")
+            except Exception as e:
+                print(f"⚠️ Facebook ads loading error: {e}")
+                ads_data = []
             
             # Store creative data for AI insights
             self.fb_creative_data = {
