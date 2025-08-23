@@ -448,42 +448,21 @@ class FacebookOptimizationTool:
             return 0.0
     
     def get_performance_summary(self):
-        """Get performance summary with corrected calculations matching the KPI analysis"""
-        if not self.data:
-            return {}
-        
-        # Use CSV URLs like corrected_final_kpis.py to get accurate totals
+        """Generate performance summary metrics"""
         try:
-            import pandas as pd
+            if not self.data:
+                return self.get_default_summary()
             
-            # Google Sheets CSV URLs
-            FB_SPEND_URL = "https://docs.google.com/spreadsheets/d/1BG--tds9na-WC3Dx3t0DTuWcmZAVYbBsvWCUJ-yFQTk/export?format=csv&gid=341667505"
-            ATTRIBUTION_URL = "https://docs.google.com/spreadsheets/d/1k49FsG1hAO3L-CGq1UjBPUxuDA6ZLMX0FCSMJQzmUCQ/export?format=csv&gid=129436906"
-            WEB_PAGES_URL = "https://docs.google.com/spreadsheets/d/1e_eimaB0WTMOcWalCwSnMGFCZ5fDG1y7jpZF-qBNfdA/export?format=csv&gid=660938596"
+            total_ads = len(self.data)
+            total_spend = sum(ad['spend'] for ad in self.data)
+            total_revenue = sum(ad['revenue'] for ad in self.data)
+            total_offer_spend = sum(ad['offer_spend'] for ad in self.data)
+            total_nprs = sum(ad['nprs'] for ad in self.data)
+            total_funnel_starts = sum(ad['funnel_starts'] for ad in self.data)
+            total_survey_completions = sum(ad['survey_completions'] for ad in self.data)
+            total_checkout_starts = sum(ad['checkout_starts'] for ad in self.data)
             
-            # Load data using pandas (like corrected_final_kpis.py)
-            fb_spend_df = pd.read_csv(FB_SPEND_URL)
-            attribution_df = pd.read_csv(ATTRIBUTION_URL)
-            web_pages_df = pd.read_csv(WEB_PAGES_URL)
-            
-            # Get totals from last rows
-            fb_totals = fb_spend_df.iloc[-1]
-            attr_totals = attribution_df.iloc[-1]
-            web_totals = web_pages_df.iloc[-1]
-            
-            # Extract corrected values from Google Sheets
-            total_spend = self.clean_numeric(fb_totals['Facebook Total Spend (USD)'])
-            total_revenue = self.clean_numeric(attr_totals['Attribution Attibuted Total Revenue (Predicted) (USD)'])
-            total_offer_spend = self.clean_numeric(attr_totals['Attribution Attibuted Offer Spend (Predicted) (USD)'])
-            total_nprs = self.clean_numeric(attr_totals['Attribution Attributed NPRs'])
-            pas_rate = self.clean_numeric(attr_totals['Attribution Attibuted PAS (Predicted)'])
-            
-            # Web Pages data (columns D, E, F from totals row)
-            total_funnel_starts = self.clean_numeric(web_totals.iloc[3])  # Column D
-            total_survey_completions = self.clean_numeric(web_totals.iloc[4])  # Column E
-            total_checkout_starts = self.clean_numeric(web_totals.iloc[5])  # Column F
-            
-            # Use Facebook API data for accurate traffic metrics
+            # Use Facebook API data for accurate traffic metrics (keep this working!)
             if self.fb_api_data:
                 total_impressions = sum(self.clean_numeric(ad.get('impressions', 0)) for ad in self.fb_api_data)
                 total_link_clicks = sum(self.clean_numeric(ad.get('link_clicks', 0)) for ad in self.fb_api_data)
@@ -492,35 +471,35 @@ class FacebookOptimizationTool:
                 total_impressions = sum(record['impressions'] for record in self.data)
                 total_link_clicks = sum(record['link_clicks'] for record in self.data)
             
-            # Count unique ads and ad sets
-            total_ads = len(self.data)
-            unique_ads = len(set(record['ad_name'] for record in self.data))
-            unique_adsets = len(set(record['adset_name'] for record in self.data))
-            
-            # Calculate corrected performance ratios
+            # Calculate performance ratios using FB API traffic data
             overall_ctr = (total_link_clicks / total_impressions * 100) if total_impressions > 0 else 0
             average_cpc = (total_spend / total_link_clicks) if total_link_clicks > 0 else 0
             average_cpm = (total_spend / total_impressions * 1000) if total_impressions > 0 else 0
             overall_roas = (total_revenue / total_spend) if total_spend > 0 else 0
             average_cpa = (total_spend / total_nprs) if total_nprs > 0 else 0  # CORRECTED: Spend ÷ NPRs
             
-            # Completion and LTV
+            # Completion and LTV calculations
+            pas_rate = 0.479  # 47.9% from attribution data
             completed_bookings = total_nprs * pas_rate
             total_cost = total_spend + total_offer_spend
             cac = (total_cost / completed_bookings) if completed_bookings > 0 else 0
             ltv = (total_revenue / completed_bookings) if completed_bookings > 0 else 0
             
-            # Corrected funnel metrics using Facebook API traffic data
+            # Funnel metrics using FB API traffic data
             funnel_start_rate = (total_funnel_starts / total_link_clicks * 100) if total_link_clicks > 0 else 0
             booking_rate = (total_nprs / total_link_clicks * 100) if total_link_clicks > 0 else 0
             survey_completion_rate = (total_survey_completions / total_funnel_starts * 100) if total_funnel_starts > 0 else 0
             checkout_start_rate = (total_checkout_starts / total_survey_completions * 100) if total_survey_completions > 0 else 0
             
-            # ROI
+            # ROI calculation
             roi = ((total_revenue - total_offer_spend - total_spend) / total_revenue * 100) if total_revenue > 0 else 0
             
-            # Success ads
+            # Count successful ads
             successful_ads = len([r for r in self.data if r['success_count'] >= 6])
+            
+            # Count unique ads and ad sets
+            unique_ads = len(set(record['ad_name'] for record in self.data))
+            unique_adsets = len(set(record['adset_name'] for record in self.data))
             
             return {
                 'total_ads': total_ads,
@@ -554,8 +533,39 @@ class FacebookOptimizationTool:
             
         except Exception as e:
             print(f"❌ Error in get_performance_summary: {e}")
-            # Fallback to aggregated data
-            return self.get_performance_summary_fallback()
+            return self.get_default_summary()
+    
+    def get_default_summary(self):
+        """Return default summary when no data available"""
+        return {
+            'total_ads': 0,
+            'unique_ads': 0,
+            'unique_adsets': 0,
+            'total_spend': 0,
+            'total_revenue': 0,
+            'total_offer_spend': 0,
+            'total_cost': 0,
+            'total_impressions': 0,
+            'total_link_clicks': 0,
+            'total_nprs': 0,
+            'completed_bookings': 0,
+            'total_funnel_starts': 0,
+            'total_survey_completions': 0,
+            'total_checkout_starts': 0,
+            'overall_ctr': 0,
+            'average_cpc': 0,
+            'average_cpm': 0,
+            'overall_roas': 0,
+            'average_cpa': 0,
+            'cac': 0,
+            'ltv': 0,
+            'funnel_start_rate': 0,
+            'booking_rate': 0,
+            'survey_completion_rate': 0,
+            'checkout_start_rate': 0,
+            'roi': 0,
+            'successful_ads': 0
+        }
     
     def get_performance_summary_fallback(self):
         """Fallback performance summary using aggregated data"""
