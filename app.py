@@ -462,14 +462,9 @@ class FacebookOptimizationTool:
             total_survey_completions = sum(ad['survey_completions'] for ad in self.data)
             total_checkout_starts = sum(ad['checkout_starts'] for ad in self.data)
             
-            # Use Facebook API data for accurate traffic metrics (keep this working!)
-            if self.fb_api_data:
-                total_impressions = sum(self.clean_numeric(ad.get('impressions', 0)) for ad in self.fb_api_data)
-                total_link_clicks = sum(self.clean_numeric(ad.get('link_clicks', 0)) for ad in self.fb_api_data)
-            else:
-                # Fallback to aggregated data if FB API not available
-                total_impressions = sum(record['impressions'] for record in self.data)
-                total_link_clicks = sum(record['link_clicks'] for record in self.data)
+            # Use aggregated data (which already includes FB API data when available)
+            total_impressions = sum(record['impressions'] for record in self.data)
+            total_link_clicks = sum(record['link_clicks'] for record in self.data)
             
             # Calculate performance ratios using FB API traffic data
             overall_ctr = (total_link_clicks / total_impressions * 100) if total_impressions > 0 else 0
