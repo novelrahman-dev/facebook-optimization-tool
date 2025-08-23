@@ -61,8 +61,8 @@ class FacebookOptimizationTool:
     def init_facebook_api(self):
         """Initialize Facebook API"""
         try:
-            self.fb_access_token = os.getenv('FACEBOOK_ACCESS_TOKEN')
-            self.fb_ad_account_id = os.getenv('FACEBOOK_AD_ACCOUNT_ID')
+            self.fb_access_token = os.getenv('FB_ACCESS_TOKEN')
+            self.fb_ad_account_id = os.getenv('FB_AD_ACCOUNT_ID')
             if self.fb_access_token and self.fb_ad_account_id:
                 print("✅ Facebook API credentials configured")
             else:
