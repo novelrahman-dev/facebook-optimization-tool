@@ -26,12 +26,16 @@ class FacebookDashboard:
     def init_google_sheets(self):
         """Initialize Google Sheets API"""
         try:
-            # Google Sheets credentials from environment
-            creds_json = os.getenv('GOOGLE_SHEETS_CREDENTIALS')
-            if not creds_json:
-                raise Exception("GOOGLE_SHEETS_CREDENTIALS environment variable not found")
+            # Try GOOGLE_CREDENTIALS_JSON first (from working version)
+            google_credentials = os.getenv('GOOGLE_CREDENTIALS_JSON')
+            if not google_credentials:
+                # Fallback to GOOGLE_SHEETS_CREDENTIALS
+                google_credentials = os.getenv('GOOGLE_SHEETS_CREDENTIALS')
             
-            creds_dict = json.loads(creds_json)
+            if not google_credentials:
+                raise Exception("Neither GOOGLE_CREDENTIALS_JSON nor GOOGLE_SHEETS_CREDENTIALS environment variable found")
+            
+            creds_dict = json.loads(google_credentials)
             scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
             creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
             self.gc = gspread.authorize(creds)
