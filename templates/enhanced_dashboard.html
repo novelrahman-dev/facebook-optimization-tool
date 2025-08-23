@@ -32,6 +32,7 @@
             color: white;
             padding: 30px;
             text-align: center;
+            position: relative;
         }
         
         .header h1 {
@@ -43,6 +44,55 @@
         .header p {
             font-size: 1.1rem;
             opacity: 0.9;
+        }
+        
+        .refresh-btn {
+            position: absolute;
+            top: 30px;
+            right: 30px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .refresh-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            border-color: rgba(255, 255, 255, 0.5);
+            transform: translateY(-2px);
+        }
+        
+        .refresh-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .refresh-btn .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid transparent;
+            border-top: 2px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            display: none;
+        }
+        
+        .refresh-btn.loading .spinner {
+            display: block;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
         
         .tabs {
@@ -709,6 +759,10 @@
 <body>
     <div class="container">
         <div class="header">
+            <button class="refresh-btn" onclick="refreshData()" id="refreshBtn">
+                <div class="spinner"></div>
+                🔄 Refresh Data
+            </button>
             <h1>🚀 Facebook Optimization Dashboard</h1>
             <p>AI-Powered Media Buying Intelligence with Real-Time Automation Control</p>
         </div>
@@ -1744,6 +1798,113 @@
                 console.error('Error updating settings summary:', error);
                 document.getElementById('settingsSummary').textContent = 'Error loading settings summary';
             }
+        }
+        
+        // Refresh data function
+        async function refreshData() {
+            const refreshBtn = document.getElementById('refreshBtn');
+            const originalText = refreshBtn.innerHTML;
+            
+            try {
+                // Show loading state
+                refreshBtn.classList.add('loading');
+                refreshBtn.disabled = true;
+                refreshBtn.innerHTML = '<div class="spinner"></div> Refreshing...';
+                
+                // Call refresh API
+                const response = await fetch('/api/refresh-data', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    
+                    // Show success message
+                    showMessage('✅ Data refreshed successfully! Reloading dashboard...', 'success');
+                    
+                    // Wait a moment then reload all data
+                    setTimeout(() => {
+                        // Reload current tab data
+                        const activeTab = document.querySelector('.tab.active');
+                        if (activeTab) {
+                            const tabName = activeTab.textContent.toLowerCase();
+                            if (tabName.includes('summary')) {
+                                loadPerformanceSummary();
+                            } else if (tabName.includes('dashboard')) {
+                                loadPerformanceData();
+                            } else if (tabName.includes('optimization')) {
+                                loadOptimizationRecommendations();
+                            } else if (tabName.includes('insights')) {
+                                loadAIInsights();
+                            } else if (tabName.includes('automation')) {
+                                updateSettingsSummary();
+                            }
+                        }
+                        
+                        // Also refresh performance summary (always visible)
+                        loadPerformanceSummary();
+                    }, 1000);
+                    
+                } else {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+            } catch (error) {
+                console.error('Error refreshing data:', error);
+                showMessage('❌ Error refreshing data: ' + error.message, 'error');
+            } finally {
+                // Reset button state
+                setTimeout(() => {
+                    refreshBtn.classList.remove('loading');
+                    refreshBtn.disabled = false;
+                    refreshBtn.innerHTML = originalText;
+                }, 2000);
+            }
+        }
+        
+        // Show message function
+        function showMessage(message, type = 'info') {
+            // Create message element
+            const messageDiv = document.createElement('div');
+            messageDiv.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                padding: 15px 20px;
+                border-radius: 8px;
+                color: white;
+                font-weight: 600;
+                z-index: 10000;
+                max-width: 400px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+                transition: all 0.3s ease;
+            `;
+            
+            // Set background color based on type
+            if (type === 'success') {
+                messageDiv.style.background = '#28a745';
+            } else if (type === 'error') {
+                messageDiv.style.background = '#dc3545';
+            } else {
+                messageDiv.style.background = '#007bff';
+            }
+            
+            messageDiv.textContent = message;
+            document.body.appendChild(messageDiv);
+            
+            // Remove after 5 seconds
+            setTimeout(() => {
+                messageDiv.style.opacity = '0';
+                messageDiv.style.transform = 'translateX(100%)';
+                setTimeout(() => {
+                    if (messageDiv.parentNode) {
+                        messageDiv.parentNode.removeChild(messageDiv);
+                    }
+                }, 300);
+            }, 5000);
         }
         
         // Initialize dashboard
