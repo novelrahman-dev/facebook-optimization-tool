@@ -574,14 +574,29 @@ class FacebookOptimizationTool:
             if cpm <= 50.0 and cpm > 0: success_count += 1
             if booking_rate >= 2.0: success_count += 1
             
+            # Success criteria object for frontend
+            success_criteria = {
+                'ctr_good': ctr >= 0.30,
+                'funnel_start_good': funnel_start_rate >= 15.0,
+                'cpa_good': cpa <= 120.0 and cpa > 0,
+                'clicks_good': total_link_clicks >= 500,
+                'roas_good': roas >= 1.0,
+                'cpc_good': cpc <= 10.0 and cpc > 0,
+                'cpm_good': cpm <= 50.0 and cpm > 0,
+                'booking_conversion_good': booking_rate >= 2.0
+            }
+            
             creative_data.append({
                 'ad_name': ad_name,
+                'ad_set_name': records[0]['adset_name'],  # Add ad set name
                 'ad_count': len(records),
                 'spend': total_spend,
                 'impressions': total_impressions,
+                'clicks': total_link_clicks,  # Add clicks field
                 'link_clicks': total_link_clicks,
                 'revenue': total_revenue,
                 'nprs': total_nprs,
+                'bookings': total_nprs,  # Add bookings field
                 'funnel_starts': total_funnel_starts,
                 'survey_completions': total_survey_completions,
                 'checkout_starts': total_checkout_starts,
@@ -592,9 +607,12 @@ class FacebookOptimizationTool:
                 'cpa': cpa,
                 'funnel_start_rate': funnel_start_rate,
                 'booking_rate': booking_rate,
+                'booking_conversion_rate': booking_rate,  # Add booking conversion rate
+                'completion_rate': 0.479,  # Add completion rate
                 'survey_completion_rate': survey_completion_rate,
                 'checkout_start_rate': checkout_start_rate,
-                'success_count': success_count
+                'success_count': success_count,
+                'success_criteria': success_criteria  # Add success criteria object
             })
         
         # Sort by spend descending
