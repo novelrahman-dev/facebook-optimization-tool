@@ -109,12 +109,10 @@ class FacebookOptimizationTool:
             est = pytz.timezone('US/Eastern')
             now_est = datetime.now(est)
             
-            # Determine the last update time based on current EST time
-            if now_est.hour >= 22:  # After 10 PM EST
-                # Use today's date (data updated at 10 PM)
-                end_date = now_est.strftime("%Y-%m-%d")
-            elif now_est.hour >= 10:  # Between 10 AM and 10 PM EST
-                # Use today's date (data updated at 10 AM)
+            # Always use current date if we're past any update interval
+            # This ensures we get the most recent data available
+            if now_est.hour >= 10:  # After 10 AM EST (either 10 AM or 10 PM update)
+                # Use today's date - data should be updated
                 end_date = now_est.strftime("%Y-%m-%d")
             else:  # Before 10 AM EST
                 # Use yesterday's date (last update was yesterday 10 PM)
@@ -122,6 +120,8 @@ class FacebookOptimizationTool:
                 end_date = yesterday.strftime("%Y-%m-%d")
             
             start_date = "2025-06-01"
+            
+            print(f"🔄 Loading Facebook API data from {start_date} to {end_date} (EST synchronized)")
             
             # Handle ad account ID format - remove act_ prefix if present
             ad_account_id = self.fb_ad_account_id
@@ -242,12 +242,10 @@ class FacebookOptimizationTool:
             est = pytz.timezone('US/Eastern')
             now_est = datetime.now(est)
             
-            # Determine the last update time based on current EST time
-            if now_est.hour >= 22:  # After 10 PM EST
-                # Use today's date (data updated at 10 PM)
-                end_date = now_est.strftime("%Y-%m-%d")
-            elif now_est.hour >= 10:  # Between 10 AM and 10 PM EST
-                # Use today's date (data updated at 10 AM)
+            # Always use current date if we're past any update interval
+            # This ensures we get the most recent data available
+            if now_est.hour >= 10:  # After 10 AM EST (either 10 AM or 10 PM update)
+                # Use today's date - data should be updated
                 end_date = now_est.strftime("%Y-%m-%d")
             else:  # Before 10 AM EST
                 # Use yesterday's date (last update was yesterday 10 PM)
@@ -255,6 +253,8 @@ class FacebookOptimizationTool:
                 end_date = yesterday.strftime("%Y-%m-%d")
             
             start_date = "2025-06-01"
+            
+            print(f"🔄 Loading Facebook API data from {start_date} to {end_date} (EST synchronized)")
             
             # Handle ad account ID format - remove act_ prefix if present
             ad_account_id = self.fb_ad_account_id
@@ -456,7 +456,7 @@ class FacebookOptimizationTool:
         try:
             fb_data, attr_data, web_data = self.load_google_sheets_data()
             
-            # Get totals from last rows
+            # Get totals from last rows (these are lists of dictionaries)
             fb_totals = fb_data[-1] if fb_data else {}
             attr_totals = attr_data[-1] if attr_data else {}
             web_totals = web_data[-1] if web_data else {}
@@ -468,11 +468,17 @@ class FacebookOptimizationTool:
             total_nprs = self.clean_numeric(attr_totals.get('Attribution Attributed NPRs', 0))
             pas_rate = self.clean_numeric(attr_totals.get('Attribution Attibuted PAS (Predicted)', 0))
             
-            # Web Pages data (columns D, E, F from totals row)
-            web_values = list(web_totals.values()) if web_totals else [0] * 10
-            total_funnel_starts = self.clean_numeric(web_values[3]) if len(web_values) > 3 else 0  # Column D
-            total_survey_completions = self.clean_numeric(web_values[4]) if len(web_values) > 4 else 0  # Column E
-            total_checkout_starts = self.clean_numeric(web_values[5]) if len(web_values) > 5 else 0  # Column F
+            # Web Pages data - get values by column names or positions
+            if isinstance(web_totals, dict):
+                # Try to get by column names first
+                web_keys = list(web_totals.keys())
+                total_funnel_starts = self.clean_numeric(web_totals.get(web_keys[3], 0)) if len(web_keys) > 3 else 0
+                total_survey_completions = self.clean_numeric(web_totals.get(web_keys[4], 0)) if len(web_keys) > 4 else 0
+                total_checkout_starts = self.clean_numeric(web_totals.get(web_keys[5], 0)) if len(web_keys) > 5 else 0
+            else:
+                total_funnel_starts = 0
+                total_survey_completions = 0
+                total_checkout_starts = 0
             
             # Use Facebook API data for accurate traffic metrics
             if self.fb_api_data:
